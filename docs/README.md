@@ -18,7 +18,7 @@
 
 | 文档 | 内容 | 状态 | 产出 / 更新时点 |
 | --- | --- | --- | --- |
-| [`development-plan.md`](development-plan.md) | 阶段划分、各阶段交付与验收、事务幂等矩阵、设计决策 | ✅ 已维护 | 阶段调整时 |
+| [`development-plan.md`](development-plan.md) | 阶段划分、各阶段交付与验收、事务幂等矩阵、设计决策、验收记录与技术债 | ✅ 已维护 | 阶段调整时 |
 | [`requirements.md`](requirements.md) | 需求规格：角色、功能范围、非功能需求、非目标 | ✅ 已建档 | 范围变化时 |
 | [`learning-roadmap.md`](learning-roadmap.md) | 六条技术主线、阶段学习产出、自测问题 | ✅ 已建档 | 每阶段完成后补充 |
 | [`product-module.md`](product-module.md) | 阶段 2 商品模块设计：数据模型、状态机、缓存、API | ✅ 已维护 | 模块变更时 |

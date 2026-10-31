@@ -111,3 +111,10 @@ mvn clean verify
 - 购物车测试使用唯一用户；购物车状态直接读 MySQL，不涉及购物车缓存。
 - 测试库与开发库分离；Redis 测试使用 database `1`。
 - 不使用物理外键，测试数据由 API 创建，保证业务规则生效。
+
+## 7. 验收执行记录
+
+- 2026-10-31：阶段 2（商品）、阶段 3（购物车）通过验收。
+- 全量 `mvn clean verify`：60 个测试，0 失败、0 错误、0 跳过。
+- Flyway V1–V9 在空库 `mallagent_final_verify` 与已有库 `mallagent_test` / `mallagent` 均执行成功。
+- 测试库 `mallagent_test` 的 SPU 157（`规格商品-27d45fb1` / SKU 145）确认为阶段 2 诊断测试残留数据，暂不删除；开发库 `mallagent` 已上架 SKU 规格完整性审计为 0 条。

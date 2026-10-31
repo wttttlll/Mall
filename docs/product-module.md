@@ -1,6 +1,6 @@
 # MallAgent 商品模块设计（阶段 2）
 
-> 状态：阶段 3 起新增只读跨模块契约 `ProductSkuQueryApi`；2026-10-31 复核发现的规格完整性与逻辑删除循环问题已修复（错误码 12032、Flyway V9），详见 `docs/development-plan.md` 6.5。
+> 状态：已通过验收（2026-10-31）；阶段 3 起新增只读跨模块契约 `ProductSkuQueryApi`。复核发现的规格完整性与逻辑删除循环问题已修复（错误码 12032、Flyway V9），详见 `docs/development-plan.md` 6.5 与第 10 节。
 > 范围：分类、品牌、SPU/SKU、规格、商品状态机、管理端/用户端查询、Redis 缓存。
 > 不包含：库存预占、购物车、订单、支付、物流、售后、优惠券、互动。
 
