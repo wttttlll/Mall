@@ -87,8 +87,7 @@ mallagent:
       category-tree-ttl: 1h
       spu-detail-ttl: 30m
   cart:
-    # Redis 缓存 TTL 上限 30 分钟；MySQL 数据长期保留
-    cache-ttl: 30m
+    # 购物车状态直接查询 MySQL，不缓存
     max-quantity-per-item: 99
     max-items: 100
 

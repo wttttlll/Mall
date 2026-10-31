@@ -4,9 +4,9 @@ MallAgent 是一个从零开发的 Java 电商后端，采用模块化单体架�
 
 ## 当前状态
 
-阶段 0（工程基座）、阶段 1（用户、RBAC、JWT、收货地址）、阶段 2（商品）已完成；阶段 3（购物车）已实现，等待验收。
+阶段 0（工程基座）、阶段 1（用户、RBAC、JWT、收货地址）、阶段 2（商品）已完成；阶段 2 复核发现的 `product` 根权限、SKU 规格完整性、逻辑删除循环问题已修复（V8/V9 + 上架校验）；阶段 3（购物车）已实现，等待验收。
 
-阶段 3 提供添加/合并数量、修改数量、删除、勾选/全选、购物车查询与金额汇总。MySQL 为事实来源，Redis 缓存购物车状态（TTL ≤ 30 分钟），添加接口使用 `Idempotency-Key`。
+阶段 3 提供添加/合并数量、修改数量、删除、勾选/全选、购物车查询与金额汇总。MySQL 为事实来源，购物车状态直接查询 MySQL，商品信息实时读取商品模块，添加接口使用 `Idempotency-Key`。
 
 订单、库存、支付等业务尚未开始。Python AI Agent 和 Vue 前端不在当前范围。
 
@@ -36,7 +36,7 @@ MallAgent/
 ├── mallagent-framework/    # Web、安全、MyBatis-Plus、Redis、MQ、OpenAPI 配置
 ├── mallagent-module-user/    # 用户、RBAC、JWT 认证、收货地址
 ├── mallagent-module-product/ # 商品分类、品牌、SPU/SKU、规格、Redis 缓存
-├── mallagent-module-cart/    # 购物车、幂等添加、Redis 缓存
+├── mallagent-module-cart/    # 购物车、幂等添加、MySQL 状态查询
 ├── mallagent-bootstrap/      # 启动类、健康检查、配置文件、Flyway 迁移
 ├── docker/mysql/init/      # MySQL 首次初始化脚本
 ├── docs/                   # 开发计划与设计文档
@@ -188,9 +188,8 @@ java -jar mallagent-bootstrap/target/mallagent-bootstrap-0.0.1-SNAPSHOT.jar
 
 - MySQL `cart_item` 是事实来源；`(user_id, sku_id)` 唯一，重复添加由原子 upsert 合并数量。
 - `cart_idempotency` 记录添加请求；`POST /api/v1/cart/items` 必须携带 `Idempotency-Key`，同一 key 相同请求不会重复累加。
-- Redis 缓存 `mallagent:cart:cache:{userId}`，只存 skuId、数量、勾选、加入时间，不存价格；TTL 上限 30 分钟。
-- 写库提交后删除缓存，缓存丢失可回源 MySQL。
-- 价格、名称、规格、上下架状态每次从商品模块读取；不可购买条目保留并标记。
+- 购物车状态不缓存，查询直接读 MySQL；商品价格、名称、规格、上下架状态实时读取商品模块。
+- 不可购买条目保留并标记；客户端不能传入价格或金额。
 - 单 SKU 数量 1–99；购物车种类上限 100 为应用层软上限。
 - 详细设计见 [docs/modules/cart.md](docs/modules/cart.md)。
 
@@ -239,7 +238,6 @@ java -jar mallagent-bootstrap/target/mallagent-bootstrap-0.0.1-SNAPSHOT.jar
 ```yaml
 mallagent:
   cart:
-    cache-ttl: 30m              # Redis 缓存 TTL，代码强制上限 30 分钟
     max-quantity-per-item: 99
     max-items: 100              # 应用层软上限
 ```
@@ -255,6 +253,8 @@ mallagent:
 - `V5__seed_product_permissions.sql` 写入 `product:*` 权限并授予超级管理员/运营只读
 - `V6__fix_product_sku_unique_indexes.sql` 将 SKU 唯一索引纳入 `deleted`，支持逻辑删除后重建
 - `V7__create_cart.sql` 创建购物车条目表和添加幂等记录表
+- `V8__grant_super_admin_product_root_permission.sql` 补授 SUPER_ADMIN 的 `product` 根权限
+- `V9__fix_product_logical_delete_unique_indexes.sql` 使用生成列支持多次删除与同业务键重建
 - 已执行的迁移脚本禁止修改，修正只能新增版本
 - 每个阶段的业务表必须提供新的迁移脚本
 
@@ -271,9 +271,9 @@ MYSQL_PORT=3307 MYSQL_USER=mallagent MYSQL_PASSWORD=mallagent mvn clean verify
 - 单元测试与集成测试均在 `mallagent-bootstrap` 中执行
 - 集成测试依赖 MySQL、Redis、RabbitMQ，可使用本机服务或 Docker Compose
 - 测试库为 `mallagent_test`（本机 `3306` 或 Docker Compose `3307`），Redis database `1`，与开发环境隔离
-- 当前共 50 个测试，覆盖健康检查、注册登录、令牌刷新/登出、登录失败锁定、RBAC、权限控制、地址归属与默认地址
-- 商品测试覆盖分类层级/删除约束、品牌、SPU/SKU/规格、状态机、可见性、缓存失效、分页上限和 `product:*` 权限
-- 购物车测试覆盖幂等重试、重复添加合并、数量上限、勾选/全选、改价、下架、SKU 删除、用户隔离、缓存回源和并发添加
+- 当前共 60 个测试，覆盖健康检查、注册登录、令牌刷新/登出、登录失败锁定、RBAC、权限控制、地址归属与默认地址
+- 商品测试覆盖分类层级/删除约束、品牌、SPU/SKU/规格、状态机、可见性、缓存失效、分页上限、`product:*` 权限，以及根权限、规格完整性和逻辑删除循环
+- 购物车测试覆盖幂等重试、重复添加合并、数量上限、勾选/全选、改价、下架、SKU 删除、用户隔离、客户端伪造价格和并发添加
 
 如果测试库不存在，可手动创建（本机 MySQL）：
 

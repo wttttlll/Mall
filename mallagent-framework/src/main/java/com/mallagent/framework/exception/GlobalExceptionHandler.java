@@ -131,7 +131,8 @@ public class GlobalExceptionHandler {
             // 商品
             case 12001, 12006, 12009, 12012, 12013, 12017, 12019 -> HttpStatus.NOT_FOUND;
             case 12002, 12004, 12005, 12007, 12008, 12010, 12011, 12014, 12016,
-                 12018, 12020, 12021, 12022, 12023, 12024, 12025, 12028, 12029 -> HttpStatus.CONFLICT;
+                 12018, 12020, 12021, 12022, 12023, 12024, 12025, 12028, 12029,
+                 12032 -> HttpStatus.CONFLICT;
             case 12003, 12015, 12026, 12027, 12030, 12031 -> HttpStatus.BAD_REQUEST;
             // 购物车
             case 13001, 13002 -> HttpStatus.NOT_FOUND;
