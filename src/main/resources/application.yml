@@ -1,0 +1,101 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: mallagent
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:mallagent}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    # 本地开发默认使用本机 MySQL 的 root 账号；Docker Compose 环境请通过环境变量覆盖
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: MallAgentHikariPool
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 3000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: 3s
+      timeout: 3s
+
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:mallagent}
+    password: ${RABBITMQ_PASSWORD:mallagent}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    connection-timeout: 3s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jackson:
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+
+mallagent:
+  jwt:
+    # 本地开发默认值；生产环境必须通过 JWT_SECRET 注入至少 32 字节的密钥
+    secret: ${JWT_SECRET:mallagent-local-dev-secret-change-me-0123456789abcdef}
+    issuer: mallagent
+    access-token-ttl: 30m
+    refresh-token-ttl: 7d
+  auth:
+    max-failures: 5
+    lock-duration: 15m
+  admin:
+    username: admin
+    init-password: ${ADMIN_INIT_PASSWORD:Admin@123456}
+    init-enabled: true
+  product:
+    cache:
+      category-tree-ttl: 1h
+      spu-detail-ttl: 30m
+  cart:
+    # 购物车状态直接查询 MySQL，不缓存
+    max-quantity-per-item: 99
+    max-items: 100
+
+logging:
+  level:
+    root: INFO
+    com.mallagent: INFO
+    # Mapper 接口的 SQL、参数和结果日志在 DEBUG 级别输出；生产环境可按需改回 INFO
+    com.mallagent.module: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{traceId:-}] %logger{40} - %msg%n"
