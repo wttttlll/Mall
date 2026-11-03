@@ -22,13 +22,16 @@
 | [`requirements.md`](requirements.md) | 需求规格：角色、功能范围、非功能需求、非目标 | ✅ 已建档 | 范围变化时 |
 | [`learning-roadmap.md`](learning-roadmap.md) | 六条技术主线、阶段学习产出、自测问题 | ✅ 已建档 | 每阶段完成后补充 |
 | [`product-module.md`](product-module.md) | 阶段 2 商品模块设计：数据模型、状态机、缓存、API | ✅ 已维护 | 模块变更时 |
-| [`architecture.md`](architecture.md) | 模块边界、依赖规则、分层职责、横切能力、部署形态 | ✅ 已维护 | 阶段 3 起持续更新 |
+| [`architecture.md`](architecture.md) | 单 Maven 模块、包边界、依赖规则、分层职责、横切能力、部署形态 | ✅ 已维护（2026-11-02） | 架构变化时 |
 | [`database.md`](database.md) | 表清单、索引与唯一约束、审计字段约定 | ✅ 已维护 | 每阶段增量 |
 | [`api-design.md`](api-design.md) | 路径与命名规约、错误码清单、分页、幂等头、鉴权约定 | ✅ 已维护 | 每阶段增量 |
 | [`test-plan.md`](test-plan.md) | 测试分层、并发与幂等用例、验收命令 | ✅ 已维护 | 每阶段增量 |
 | [`modules/cart.md`](modules/cart.md) | 阶段 3 购物车设计：数据模型、幂等、并发、直接查 MySQL | ✅ 已维护 | 模块变更时 |
+| [`modules/inventory.md`](modules/inventory.md) | 阶段 4 库存设计：两表、五类流水、行锁、整单回补、findStocks、权限与错误码 | ✅ 已维护（2026-11-02） | 模块变更时 |
+| [`modules/order.md`](modules/order.md) | 阶段 6 MVP 订单：购物车下单、库存锁定、列表/详情、取消、幂等与并发 | ✅ 已维护（2026-11-02） | 模块变更时 |
+| [`modules/payment.md`](modules/payment.md) | 阶段 7 MVP 模拟支付：支付成功、库存扣减、重复支付幂等、订单状态联动 | ✅ 已维护（2026-11-02） | 模块变更时 |
 | `business-flows.md` | 下单、支付、取消、超时关闭、退款等流程与状态机 | 📝 待补 | 阶段 6 前出草案，6–9 补全 |
-| `modules/<模块>.md` | 后续模块设计（库存、优惠券、订单、支付、物流、售后） | ⏳ 随阶段 | 各阶段设计确认时 |
+| `modules/<模块>.md` | 后续模块设计（优惠券、物流、售后） | ⏳ 随阶段 | 各阶段设计确认时 |
 | `deployment.md` | 部署手册：Compose 编排、profile、环境变量、启动顺序、验证步骤 | ⏳ 计划中 | 阶段 11 |
 | `operations.md` | 运维手册：日志与 traceId、常见故障排查、备份与恢复 | ⏳ 计划中 | 阶段 11 |
 | `retrospective.md` | 项目复盘：设计得失、踩坑记录、可改进项 | ⏳ 计划中 | 阶段 11 |

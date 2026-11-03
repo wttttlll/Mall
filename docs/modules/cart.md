@@ -14,10 +14,12 @@
 - 购物车只能操作当前登录用户的数据。
 - 不提前实现订单、库存预占和下单清理。
 
-## 2. 模块结构
+## 2. 包结构
+
+工程为单 Maven 模块，购物车代码位于 `src/main/java/com/mallagent/module/cart/`：
 
 ```text
-mallagent-module-cart
+com.mallagent.module.cart
 ├── config/        CartProperties
 ├── controller/    CartController
 ├── dto/cart/      请求与响应 DTO
@@ -30,8 +32,8 @@ mallagent-module-cart
 依赖方向：
 
 ```text
-bootstrap -> cart -> product(api)
-cart -> framework -> common
+com.mallagent.module.cart -> com.mallagent.module.product.api
+com.mallagent.module.cart -> com.mallagent.framework -> com.mallagent.common
 ```
 
 购物车只使用 `com.mallagent.module.product.api` 下的 `ProductSkuQueryApi`，不直接引用商品 Mapper、实体或 Service 实现。
@@ -149,7 +151,8 @@ cart -> framework -> common
 
 ```bash
 docker compose up -d --wait
-MYSQL_PORT=3307 MYSQL_USER=mallagent MYSQL_PASSWORD=mallagent mvn clean verify
+# MYSQL_PASSWORD 由本地环境注入，文档不记录实际密码
+MYSQL_PORT=3307 MYSQL_USER=mallagent MYSQL_PASSWORD="$MYSQL_PASSWORD" mvn clean verify
 ```
 
 ## 9. 已知限制

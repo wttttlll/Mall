@@ -1,7 +1,7 @@
 # MallAgent 数据库设计
 
 > 适用范围：阶段 0–9（MVP）。本文登记表、索引与约束；字段级业务说明见各模块文档。
-> 最后更新：2026-10-31（阶段 3 新增购物车两表）。
+> 最后更新：2026-11-02（阶段 6/7 MVP 简化版新增订单与模拟支付三表）。
 
 ## 1. 通用约定
 
@@ -27,6 +27,9 @@
 | V7 | `V7__create_cart.sql` | 购物车条目、添加幂等记录 |
 | V8 | `V8__grant_super_admin_product_root_permission.sql` | 补授 SUPER_ADMIN 的 `product` 根权限 |
 | V9 | `V9__fix_product_logical_delete_unique_indexes.sql` | 生成列唯一索引，支持多次删除与同业务键重建 |
+| V10 | `V10__create_inventory.sql` | 库存主记录 `stock_sku`、库存流水 `stock_flow` |
+| V11 | `V11__seed_inventory_permissions.sql` | `inventory:*` 权限种子及角色授权 |
+| V12 | `V12__create_order_payment.sql` | 订单 `order_info`、订单明细 `order_item`、模拟支付单 `payment_order` |
 
 已执行迁移禁止修改；修正错误只能新增版本。
 
@@ -72,6 +75,51 @@
 
 `cart_idempotency` 关键字段：`user_id`、`idempotency_key`、`request_hash`、`sku_id`、`quantity`、`claim_token`、`created_at`。`claim_token` 用于区分新请求与重复请求。
 
+### 3.4 库存（阶段 4）
+
+| 表 | 用途 | 关键约束 |
+| --- | --- | --- |
+| `stock_sku` | SKU 库存主记录 | `UNIQUE (sku_id)`；`available_stock >= 0`、`locked_stock >= 0` 两个 CHECK |
+| `stock_flow` | 不可变库存流水 | `UNIQUE (biz_type, biz_no, sku_id)`；`UNIQUE (admin_biz_no)`；`quantity > 0` |
+
+`stock_sku` 关键字段：`sku_id`、`available_stock`（可售）、`locked_stock`（锁定）、`version`、审计字段。
+
+`stock_flow` 关键字段：`biz_type`、`biz_no`、`ref_biz_no`、`sku_id`、`quantity`、`change_available`、`change_locked`、`available_before/after`、`locked_before/after`、`request_token`、`admin_biz_no`、`remark`、`created_at`、`created_by`。
+
+索引：
+
+- `UNIQUE (biz_type, biz_no, sku_id)`：订单、售后、管理端调整的幂等最终防线。
+- `UNIQUE (admin_biz_no)`：`admin_biz_no` 是 `ADMIN_ADJUST` 时取 `biz_no` 的 STORED 生成列，其余业务类型为 `NULL`。
+- `KEY (ref_biz_no, sku_id, biz_type)`：售后退货按原订单和 SKU 汇总回补。
+- `KEY (sku_id, created_at)`：SKU 维度流水查询。
+- `KEY (biz_no)`：按业务单号查询。
+
+`stock_flow` 为只追加流水，不提供更新/删除业务字段的接口；流水占位与 before/after 回填在同一事务内完成。详细规则见 [`modules/inventory.md`](modules/inventory.md)。
+
+### 3.5 订单与模拟支付（阶段 6/7 MVP 简化版）
+
+| 表 | 用途 | 关键约束 |
+| --- | --- | --- |
+| `order_info` | 订单主记录 | `UNIQUE(order_no)`；`UNIQUE(user_id, idempotency_key)`；状态 CHECK |
+| `order_item` | 订单明细快照 | `UNIQUE(order_id, sku_id)`；数量、单价、行金额 CHECK |
+| `payment_order` | 模拟支付单 | `UNIQUE(payment_no)`；`UNIQUE(order_no)`；金额 CHECK |
+
+`order_info` 关键字段：`order_no`、`user_id`、`status`、`total_amount`、`item_count`、收货人快照、`idempotency_key`、`paid_at`、`cancelled_at`、审计字段、`version`。
+
+订单状态：`PENDING_PAYMENT`、`PAID`、`CANCELLED`。MVP 简化版不实现超时关闭、物流和售后。
+
+`order_item` 关键字段：`order_id`、`sku_id`、`spu_id`、`sku_code`、`spu_name`、`image_url`、`spec_text`、`unit_price`、`quantity`、`line_amount`。商品信息为下单时快照，不随后续商品变更而改变。
+
+`payment_order` 关键字段：`payment_no`、`order_no`、`user_id`、`amount`、`channel`（当前固定 `MOCK`）、`status`（当前仅 `SUCCESS`）、`paid_at`。
+
+索引：
+
+- `order_info`：`UK(order_no)`、`UK(user_id, idempotency_key)`、`KEY(user_id, id)`、`KEY(user_id, status)`。
+- `order_item`：`UK(order_id, sku_id)`、`KEY(order_id)`、`KEY(sku_id)`。
+- `payment_order`：`UK(payment_no)`、`UK(order_no)`、`KEY(user_id)`。
+
+订单状态流转由条件更新和订单行锁保证；模拟支付与取消共用同一订单行锁。详见 [`modules/order.md`](modules/order.md)。
+
 ## 4. 索引设计原则
 
 - 唯一索引承载业务唯一性，不能只靠代码先查后插。
@@ -85,5 +133,6 @@
 - MySQL 是订单、支付、库存、优惠券、购物车的权威数据源。
 - Redis 只做缓存：商品分类树、商品详情。
 - 购物车状态当前不缓存，查询直接读 MySQL。
+- 库存余额与库存流水不缓存，全部读 MySQL；库存并发正确性依赖条件更新、唯一约束和行锁。
 - 缓存丢失或过期必须能回源 MySQL，不影响数据正确性。
 - 幂等判断以 MySQL 唯一索引为准，Redis 不能替代。

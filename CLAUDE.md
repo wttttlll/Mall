@@ -6,7 +6,7 @@
 
 MallAgent 是从零开发的 Java 电商后端，采用模块化单体架构，只有一个 Spring Boot 启动应用。业务设计参考 [macrozheng/mall](https://github.com/macrozheng/mall)，但不复制其代码、包结构或实现。
 
-当前范围仅限 Java 后端，MVP 边界为阶段 0–9。Vue 前端登记为阶段 12，Python AI Agent 另行规划；两者本阶段均不开发，也不预埋相关代码。
+当前范围：Java 后端 MVP（阶段 0–9）+ Vue 3 前端 MVP。前端位于 `frontend/`，已实现登录/注册、商品、购物车、结算下单、订单、模拟支付和收货地址管理。Python AI Agent 另行规划，不预埋代码。
 
 ## 2. 技术栈（固定）
 
@@ -14,7 +14,7 @@ MallAgent 是从零开发的 Java 电商后端，采用模块化单体架构，�
 | --- | --- |
 | 语言 | Java 21 |
 | 框架 | Spring Boot 3.x |
-| 构建 | Maven 多模块 |
+| 构建 | Maven 单模块（单 JAR） |
 | ORM | MyBatis-Plus |
 | 数据库 | MySQL 8 |
 | 缓存 | Redis |
@@ -25,13 +25,14 @@ MallAgent 是从零开发的 Java 电商后端，采用模块化单体架构，�
 | 测试 | JUnit 5 + Spring Boot Test + MockMvc + Mockito（随 starter-test），不使用 Testcontainers |
 | 本地基础设施 | Docker Compose |
 | 辅助工具 | Lombok（仅用于实体/DTO，减少样板代码） |
+| 前端（MVP） | Vue 3 + Vite + Vue Router + Pinia + Axios，位于 `frontend/` |
 
 约束：
 
 - 不擅自升级、替换或新增核心技术组件。
 - 新增依赖（如 MapStruct、Testcontainers、Redisson）必须先说明用途和影响，获得技术负责人确认；Lombok 已确认引入。
 - 不引入微服务、注册中心、API 网关、Elasticsearch、Nacos 等组件。
-- 未来接入 Python AI Agent 和 Vue 前端时另行设计，本阶段不预埋相关代码。
+- Vue 前端 MVP 已实现于 `frontend/`；Python AI Agent 另行设计，不预埋代码。
 
 ## 3. 架构规范
 
@@ -42,52 +43,54 @@ MallAgent 是从零开发的 Java 电商后端，采用模块化单体架构，�
 - 使用本地数据库事务保证强一致；不引入分布式事务框架。
 - 跨模块异步协作使用 RabbitMQ，接受最终一致，但必须有幂等和补偿设计。
 
-### 3.2 Maven 模块
+### 3.2 工程与包结构
 
-根工程为 `mallagent-parent`，按业务阶段逐步增加模块，不提前创建后续模块。
+工程为**单 Maven 模块**：根 `pom.xml` 的 `artifactId` 为 `mallagent`、`packaging` 为 `jar`，不存在子模块 `pom.xml`。源码统一在根 `src/main/java`、`src/test/java`。
 
-| 模块 | 职责 | 引入阶段 |
+本文中的“模块”指 `com.mallagent.*` 包边界，不是 Maven 子模块。按业务阶段逐步增加 `com.mallagent.module.*` 包，不提前创建后续包。
+
+| 包 | 职责 | 引入阶段 |
 | --- | --- | --- |
-| `mallagent-common` | 通用返回、错误码、异常、常量、工具 | 阶段 0 |
-| `mallagent-framework` | Web、安全、MyBatis-Plus、Redis、MQ、OpenAPI 等基础设施 | 阶段 0 |
-| `mallagent-bootstrap` | 启动类、全局配置、打包 | 阶段 0 |
-| `mallagent-module-user` | 用户、RBAC、认证、收货地址 | 阶段 1 |
-| `mallagent-module-product` | 分类、品牌、SPU/SKU、规格属性 | 阶段 2 |
-| `mallagent-module-cart` | 购物车 | 阶段 3 |
-| `mallagent-module-inventory` | 库存与库存流水 | 阶段 4 |
-| `mallagent-module-coupon` | 优惠券 | 阶段 5 |
-| `mallagent-module-order` | 订单与订单状态机 | 阶段 6 |
-| `mallagent-module-payment` | 模拟支付 | 阶段 7 |
-| `mallagent-module-logistics` | 物流与发货 | 阶段 8 |
-| `mallagent-module-aftersale` | 售后与退款 | 阶段 9 |
-| `mallagent-module-interaction` | 点赞、收藏、评论 | 阶段 10 |
+| `com.mallagent.common` | 通用返回、错误码、异常、常量、工具 | 阶段 0 |
+| `com.mallagent.framework` | Web、安全、MyBatis-Plus、Redis、MQ、OpenAPI 等基础设施 | 阶段 0 |
+| `com.mallagent.bootstrap` | 启动类、系统健康检查、全局配置、打包 | 阶段 0 |
+| `com.mallagent.module.user` | 用户、RBAC、认证、收货地址 | 阶段 1 |
+| `com.mallagent.module.product` | 分类、品牌、SPU/SKU、规格属性 | 阶段 2 |
+| `com.mallagent.module.cart` | 购物车 | 阶段 3 |
+| `com.mallagent.module.inventory` | 库存与库存流水 | 阶段 4 |
+| `com.mallagent.module.coupon` | 优惠券 | 阶段 5 |
+| `com.mallagent.module.order` | 订单与订单状态机 | 阶段 6 |
+| `com.mallagent.module.payment` | 模拟支付 | 阶段 7 |
+| `com.mallagent.module.logistics` | 物流与发货 | 阶段 8 |
+| `com.mallagent.module.aftersale` | 售后与退款 | 阶段 9 |
+| `com.mallagent.module.interaction` | 点赞、收藏、评论 | 阶段 10 |
 
 依赖方向：
 
 ```text
-mallagent-bootstrap
+com.mallagent.bootstrap
       ↓
-mallagent-module-*
+com.mallagent.module.*
       ↓
-mallagent-framework
+com.mallagent.framework
       ↓
-mallagent-common
+com.mallagent.common
 ```
 
 规则：
 
-- `common` 不依赖任何业务模块，尽量不依赖 Spring。
-- `framework` 只依赖 `common`，不反向依赖业务模块。
-- 业务模块只能依赖 `framework`、`common` 和必要的其他模块 `api` 包。
-- 跨模块调用必须通过对方 `api` 包中的接口和 DTO；禁止直接引用对方的 mapper、entity、service 实现类。
-- 禁止模块间循环依赖。
-- 禁止跨模块直接读写对方的数据库表。
+- `common` 不依赖任何业务包，尽量不依赖 Spring。
+- `framework` 只依赖 `common`，不反向依赖业务包。
+- 业务包只能依赖 `framework`、`common` 和必要的其他业务包 `api` 子包。
+- 跨包调用必须通过对方 `api` 包中的接口和 DTO；禁止直接引用对方的 mapper、entity、service 实现类。
+- 禁止包间循环依赖。
+- 禁止跨业务包直接读写对方的数据库表。
 
-### 3.3 模块内包结构
+### 3.3 业务包内结构
 
 ```text
 com.mallagent.<module>
-├── api/          # 跨模块契约：接口 + DTO（按需，仅供其他模块调用）
+├── api/          # 跨包契约：接口 + DTO（按需，仅供其他业务包调用）
 ├── controller/   # HTTP 入口，只做校验、参数转换、调用 service
 ├── service/      # 业务编排（接口 + impl）
 ├── entity/       # MyBatis-Plus 实体
@@ -106,7 +109,7 @@ com.mallagent.<module>
 ### 3.4 命名与坐标
 
 - groupId：`com.mallagent`
-- artifactId：`mallagent-*`
+- artifactId：`mallagent`（单 Maven 模块）
 - 基础包名：`com.mallagent`
 - 启动类：`com.mallagent.MallAgentApplication`
 
@@ -288,16 +291,22 @@ com.mallagent.<module>
 
 ## 12. 当前阶段
 
-阶段 0（工程基座）、阶段 1（用户、RBAC、JWT、收货地址）、阶段 2（商品）、阶段 3（购物车）已通过验收（2026-10-31）。阶段 2 复核发现的 `product` 根权限、SKU 规格完整性、逻辑删除循环问题已修复（V8/V9 + 上架校验）。
+阶段 0（工程基座）、阶段 1（用户、RBAC、JWT、收货地址）、阶段 2（商品）、阶段 3（购物车）、阶段 4（库存）已通过验收（阶段 4 于 2026-11-02 通过技术验收）。阶段 2 复核发现的 `product` 根权限、SKU 规格完整性、逻辑删除循环问题已修复（V8/V9 + 上架校验）。
 
-阶段 3 覆盖添加/合并数量、修改数量、删除、勾选/全选、购物车查询与汇总；MySQL 为事实来源，购物车状态直接查询 MySQL，商品信息实时读取商品模块，添加接口使用 `Idempotency-Key`，详见 `docs/modules/cart.md`。阶段 4 尚未开始；不提前实现库存预占、订单、支付、物流、售后、优惠券、互动等后续模块。验收记录与技术债见 `docs/development-plan.md` 第 10 节。
+阶段 4 覆盖库存锁定、支付扣减、取消释放、售后退货回补、批量库存快照、库存流水，以及管理端库存查询、调整和流水查询。库存仅使用 `stock_sku`、`stock_flow` 两张表，Flyway V10/V11；公共内部契约是 `com.mallagent.module.inventory.api.InventoryStockApi`，详见 `docs/modules/inventory.md`。
+
+阶段 6/7 的 **MVP 简化版**已实现并验证（2026-11-02）：从购物车提交订单、服务端重新计价、订单/明细、库存锁定、我的订单列表/详情、取消未支付订单并释放库存；模拟支付成功、库存扣减、重复支付幂等、已取消不能支付、已支付不能取消、支付与取消并发仅一个成功。新增 Flyway V12 的 `order_info`、`order_item`、`payment_order` 三张表，详见 `docs/modules/order.md`、`docs/modules/payment.md`。全量 `mvn clean verify` 为 147 个测试，0 失败、0 错误、0 跳过。
+
+Vue 3 前端 MVP 已实现于 `frontend/`：Vue Router 管理路由与登录守卫，Pinia 保存 JWT 与用户信息，Axios 统一处理统一响应、401/403 和业务错误；页面覆盖登录/注册、商品列表/详情、购物车、结算下单、订单列表/详情、模拟支付、取消订单和收货地址管理。前端通过 Vite `/api` 代理访问后端，构建和 Vitest 单测已通过。
+
+优惠券、物流、售后、互动尚未开始，下一阶段优先级待技术负责人确认。不提前实现未确认的模块。验收记录与技术债见 `docs/development-plan.md` 第 10 节。
 
 ### 12.1 MVP 范围
 
 - MVP 为阶段 0–9：基座、用户/RBAC、商品、购物车、库存、优惠券、订单、支付、物流、售后，构成“浏览 → 加购 → 下单 → 支付 → 发货 → 收货 → 退款”的完整闭环。
 - 阶段 10（点赞、收藏、评论）为 MVP 后增量，MVP 期间不得创建其表、接口或权限码。
 - 阶段 11 为交付加固，只做回归、并发验证与文档，不新增业务功能。
-- 阶段 12（Vue 前端）不属于后端 MVP，另行设计。
+- 阶段 12（Vue 前端）不属于后端 MVP；前端 MVP 已实现于 `frontend/`，不新增后端业务功能。
 - 功能边界以 `docs/requirements.md` 为准；扩大或缩小 MVP 范围必须先由技术负责人确认，并同步更新 `docs/development-plan.md`。
 
 ## 13. 完成定义（Definition of Done）
