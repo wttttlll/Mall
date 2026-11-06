@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Update;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 订单主记录 Mapper。
@@ -20,7 +21,8 @@ public interface OrderInfoMapper extends BaseMapper<OrderInfo> {
             SELECT id, order_no, user_id, status, total_amount, item_count,
                    receiver_name, receiver_phone, receiver_province, receiver_city,
                    receiver_district, receiver_detail_address, receiver_postal_code,
-                   idempotency_key, paid_at, cancelled_at, created_at, updated_at,
+                   idempotency_key, paid_at, cancelled_at, shipping_company, tracking_no,
+                   shipped_at, completed_at, created_at, updated_at,
                    created_by, updated_by, version
             FROM order_info
             WHERE order_no = #{orderNo}
@@ -28,13 +30,14 @@ public interface OrderInfoMapper extends BaseMapper<OrderInfo> {
     OrderInfo selectByOrderNo(@Param("orderNo") String orderNo);
 
     /**
-     * 锁定订单行。支付与取消共用该互斥点。
+     * 锁定订单行。支付、取消、发货与确认收货共用该互斥点。
      */
     @Select("""
             SELECT id, order_no, user_id, status, total_amount, item_count,
                    receiver_name, receiver_phone, receiver_province, receiver_city,
                    receiver_district, receiver_detail_address, receiver_postal_code,
-                   idempotency_key, paid_at, cancelled_at, created_at, updated_at,
+                   idempotency_key, paid_at, cancelled_at, shipping_company, tracking_no,
+                   shipped_at, completed_at, created_at, updated_at,
                    created_by, updated_by, version
             FROM order_info
             WHERE order_no = #{orderNo}
@@ -46,7 +49,8 @@ public interface OrderInfoMapper extends BaseMapper<OrderInfo> {
             SELECT id, order_no, user_id, status, total_amount, item_count,
                    receiver_name, receiver_phone, receiver_province, receiver_city,
                    receiver_district, receiver_detail_address, receiver_postal_code,
-                   idempotency_key, paid_at, cancelled_at, created_at, updated_at,
+                   idempotency_key, paid_at, cancelled_at, shipping_company, tracking_no,
+                   shipped_at, completed_at, created_at, updated_at,
                    created_by, updated_by, version
             FROM order_info
             WHERE user_id = #{userId} AND idempotency_key = #{idempotencyKey}
@@ -81,6 +85,20 @@ public interface OrderInfoMapper extends BaseMapper<OrderInfo> {
                  @Param("userId") Long userId,
                  @Param("paidAt") LocalDateTime paidAt);
 
+    /**
+     * 查询已超过支付截止时间的待支付订单号。仅用于扫描候选，最终状态必须在行锁内重新确认。
+     */
+    @Select("""
+            SELECT order_no
+            FROM order_info
+            WHERE status = 'PENDING_PAYMENT'
+              AND created_at <= #{cutoff}
+            ORDER BY created_at ASC, id ASC
+            LIMIT #{limit}
+            """)
+    List<String> selectExpiredPendingOrderNos(@Param("cutoff") LocalDateTime cutoff,
+                                              @Param("limit") int limit);
+
     @Update("""
             UPDATE order_info
             SET status = 'CANCELLED',
@@ -93,4 +111,34 @@ public interface OrderInfoMapper extends BaseMapper<OrderInfo> {
     int markCancelled(@Param("orderNo") String orderNo,
                       @Param("userId") Long userId,
                       @Param("cancelledAt") LocalDateTime cancelledAt);
+
+    @Update("""
+            UPDATE order_info
+            SET status = 'SHIPPED',
+                shipping_company = #{shippingCompany},
+                tracking_no = #{trackingNo},
+                shipped_at = #{shippedAt},
+                version = version + 1,
+                updated_at = CURRENT_TIMESTAMP(3),
+                updated_by = #{operatorId}
+            WHERE order_no = #{orderNo} AND status = 'PAID'
+            """)
+    int markShipped(@Param("orderNo") String orderNo,
+                    @Param("operatorId") Long operatorId,
+                    @Param("shippingCompany") String shippingCompany,
+                    @Param("trackingNo") String trackingNo,
+                    @Param("shippedAt") LocalDateTime shippedAt);
+
+    @Update("""
+            UPDATE order_info
+            SET status = 'COMPLETED',
+                completed_at = #{completedAt},
+                version = version + 1,
+                updated_at = CURRENT_TIMESTAMP(3),
+                updated_by = #{userId}
+            WHERE order_no = #{orderNo} AND user_id = #{userId} AND status = 'SHIPPED'
+            """)
+    int markCompleted(@Param("orderNo") String orderNo,
+                      @Param("userId") Long userId,
+                      @Param("completedAt") LocalDateTime completedAt);
 }

@@ -16,5 +16,8 @@ export const orderApi = {
   },
   cancel(orderNo) {
     return http.post(`/orders/${orderNo}/cancel`)
+  },
+  confirmReceipt(orderNo) {
+    return http.post(`/orders/${orderNo}/confirm-receipt`)
   }
 }

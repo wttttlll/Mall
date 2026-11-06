@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { formatMoney, formatPriceRange, orderStatusClass, orderStatusText } from './format'
+import {
+  afterSaleProcessStatusText,
+  afterSaleStatusClass,
+  afterSaleStatusText,
+  formatMoney,
+  formatPriceRange,
+  orderStatusClass,
+  orderStatusText,
+  productStatusClass,
+  productStatusText
+} from './format'
 import { createIdempotencyKey } from './idempotency'
 
 describe('format utilities', () => {
@@ -16,8 +26,24 @@ describe('format utilities', () => {
 
   it('maps order status text and class', () => {
     expect(orderStatusText('PENDING_PAYMENT')).toBe('待支付')
-    expect(orderStatusText('PAID')).toBe('已支付')
+    expect(orderStatusText('PAID')).toBe('待发货')
+    expect(orderStatusText('SHIPPED')).toBe('待收货')
+    expect(orderStatusText('COMPLETED')).toBe('已完成')
+    expect(orderStatusClass('SHIPPED')).toBe('status-shipped')
     expect(orderStatusClass('CANCELLED')).toBe('status-cancelled')
+  })
+
+  it('maps product status text and class', () => {
+    expect(productStatusText('ON_SHELF')).toBe('已上架')
+    expect(productStatusClass('DRAFT')).toBe('status-draft')
+    expect(productStatusClass('OFF_SHELF')).toBe('status-off-shelf')
+  })
+
+  it('maps after-sale status text and class', () => {
+    expect(afterSaleStatusText('APPLIED')).toBe('待审核')
+    expect(afterSaleStatusText('COMPLETED')).toBe('已完成')
+    expect(afterSaleStatusClass('APPROVED')).toBe('status-shipped')
+    expect(afterSaleProcessStatusText('PENDING')).toBe('待处理')
   })
 })
 

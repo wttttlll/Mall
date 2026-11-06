@@ -4,12 +4,19 @@ import EmptyState from '../components/EmptyState.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
 import LoadingState from '../components/LoadingState.vue'
 import ProductCard from '../components/ProductCard.vue'
+import { favoriteApi } from '../api/favorite'
 import { productApi } from '../api/product'
+import { useAuthStore } from '../stores/auth'
 
+const auth = useAuthStore()
 const products = ref([])
 const categories = ref([])
 const loading = ref(false)
 const error = ref('')
+const favoriteError = ref('')
+const favoriteNotice = ref('')
+const favoriteIds = ref(new Set())
+const favoriteBusyId = ref(null)
 const page = reactive({ pageNum: 1, pageSize: 12, total: 0 })
 const filters = reactive({ keyword: '', categoryId: '' })
 
@@ -38,6 +45,7 @@ async function loadCategories() {
 async function loadProducts() {
   loading.value = true
   error.value = ''
+  favoriteNotice.value = ''
   try {
     const data = await productApi.list({
       pageNum: page.pageNum,
@@ -47,10 +55,50 @@ async function loadProducts() {
     })
     products.value = data.list || []
     page.total = data.total || 0
+    await loadFavoriteStatus()
   } catch (err) {
     error.value = err.message || '商品加载失败'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadFavoriteStatus() {
+  favoriteError.value = ''
+  if (!auth.isAuthenticated || !products.value.length) {
+    favoriteIds.value = new Set()
+    return
+  }
+  try {
+    const data = await favoriteApi.status(products.value.map((product) => product.id))
+    favoriteIds.value = new Set(data.favoriteSpuIds || [])
+  } catch (err) {
+    favoriteError.value = err.message || '收藏状态加载失败'
+  }
+}
+
+async function toggleFavorite(product) {
+  if (favoriteBusyId.value) return
+  favoriteBusyId.value = product.id
+  favoriteError.value = ''
+  favoriteNotice.value = ''
+  try {
+    const active = favoriteIds.value.has(product.id)
+    if (active) {
+      await favoriteApi.remove(product.id)
+      const next = new Set(favoriteIds.value)
+      next.delete(product.id)
+      favoriteIds.value = next
+      favoriteNotice.value = `已取消收藏「${product.name}」`
+    } else {
+      await favoriteApi.add(product.id)
+      favoriteIds.value = new Set([...favoriteIds.value, product.id])
+      favoriteNotice.value = `已收藏「${product.name}」`
+    }
+  } catch (err) {
+    favoriteError.value = err.message || '收藏操作失败'
+  } finally {
+    favoriteBusyId.value = null
   }
 }
 
@@ -97,12 +145,21 @@ onMounted(() => {
     </form>
 
     <ErrorBanner :message="error" retryable @retry="loadProducts" />
+    <ErrorBanner :message="favoriteError" retryable @retry="loadFavoriteStatus" />
+    <div v-if="favoriteNotice" class="success-banner">{{ favoriteNotice }}</div>
 
     <LoadingState v-if="loading" label="正在加载商品..." />
 
     <template v-else>
       <div v-if="products.length" class="product-grid">
-        <ProductCard v-for="product in products" :key="product.id" :product="product" />
+        <ProductCard
+          v-for="product in products"
+          :key="product.id"
+          :product="product"
+          :favorite="favoriteIds.has(product.id)"
+          :favorite-busy="favoriteBusyId === product.id"
+          @toggle-favorite="toggleFavorite"
+        />
       </div>
       <EmptyState v-else title="没有找到商品" description="换个关键词或分类试试。">
         <button class="btn btn-ghost" type="button" @click="filters.keyword = ''; filters.categoryId = ''; search()">

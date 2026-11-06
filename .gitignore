@@ -28,6 +28,7 @@ desktop.ini
 
 # ---- Runtime / Local config ----
 logs/
+.run/
 *.pid
 .env
 .env.local

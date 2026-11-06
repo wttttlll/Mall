@@ -1,8 +1,9 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
 import LoadingState from '../components/LoadingState.vue'
+import OrderCountdown from '../components/OrderCountdown.vue'
 import OrderStatusBadge from '../components/OrderStatusBadge.vue'
 import { orderApi } from '../api/order'
 import { paymentApi } from '../api/payment'
@@ -11,7 +12,9 @@ import { formatDateTime, formatMoney } from '../utils/format'
 const tabs = [
   { value: '', label: '全部' },
   { value: 'PENDING_PAYMENT', label: '待支付' },
-  { value: 'PAID', label: '已支付' },
+  { value: 'PAID', label: '待发货' },
+  { value: 'SHIPPED', label: '待收货' },
+  { value: 'COMPLETED', label: '已完成' },
   { value: 'CANCELLED', label: '已取消' }
 ]
 
@@ -22,6 +25,7 @@ const message = ref('')
 const busyOrderNo = ref('')
 const page = reactive({ pageNum: 1, pageSize: 10, total: 0 })
 const status = ref('')
+let expiredRefreshTimer = null
 
 const totalPages = computed(() => Math.max(1, Math.ceil(page.total / page.pageSize)))
 
@@ -66,7 +70,12 @@ async function payOrder(order) {
     message.value = `订单 ${order.orderNo} 模拟支付成功`
     await loadOrders()
   } catch (err) {
-    error.value = err.message || '支付失败'
+    if (err.code === 17005) {
+      await loadOrders()
+      error.value = '订单已超过支付时间，系统将自动取消'
+    } else {
+      error.value = err.message || '支付失败'
+    }
   } finally {
     busyOrderNo.value = ''
   }
@@ -89,7 +98,35 @@ async function cancelOrder(order) {
   }
 }
 
+async function confirmReceipt(order) {
+  if (busyOrderNo.value) return
+  if (!window.confirm(`确认已收到订单 ${order.orderNo} 的商品吗？`)) return
+  busyOrderNo.value = order.orderNo
+  error.value = ''
+  message.value = ''
+  try {
+    await orderApi.confirmReceipt(order.orderNo)
+    message.value = `订单 ${order.orderNo} 已确认收货`
+    await loadOrders()
+  } catch (err) {
+    error.value = err.message || '确认收货失败'
+  } finally {
+    busyOrderNo.value = ''
+  }
+}
+
+function handleExpired() {
+  if (expiredRefreshTimer) return
+  expiredRefreshTimer = window.setTimeout(async () => {
+    expiredRefreshTimer = null
+    await loadOrders()
+  }, 1500)
+}
+
 onMounted(loadOrders)
+onBeforeUnmount(() => {
+  if (expiredRefreshTimer) window.clearTimeout(expiredRefreshTimer)
+})
 </script>
 
 <template>
@@ -131,6 +168,12 @@ onMounted(loadOrders)
             <div>
               <RouterLink :to="`/orders/${order.orderNo}`" class="order-no">{{ order.orderNo }}</RouterLink>
               <span class="order-time">{{ formatDateTime(order.createdAt) }}</span>
+              <OrderCountdown
+                v-if="order.status === 'PENDING_PAYMENT'"
+                :deadline="order.payDeadline"
+                active
+                @expired="handleExpired"
+              />
             </div>
             <OrderStatusBadge :status="order.status" />
           </div>
@@ -160,6 +203,15 @@ onMounted(loadOrders)
                   取消订单
                 </button>
               </template>
+              <button
+                v-if="order.status === 'SHIPPED'"
+                class="btn btn-primary btn-sm"
+                type="button"
+                :disabled="busyOrderNo === order.orderNo"
+                @click="confirmReceipt(order)"
+              >
+                {{ busyOrderNo === order.orderNo ? '处理中...' : '确认收货' }}
+              </button>
             </div>
           </div>
         </article>
@@ -213,6 +265,14 @@ onMounted(loadOrders)
   font-size: 12px;
 }
 
+.order-card-head :deep(.order-countdown) {
+  margin-left: 12px;
+}
+
+.order-card-head :deep(.order-countdown.expired) {
+  color: var(--danger);
+}
+
 .order-card-body {
   display: flex;
   align-items: center;
@@ -246,6 +306,11 @@ onMounted(loadOrders)
   }
 
   .order-time {
+    display: block;
+    margin: 6px 0 0;
+  }
+
+  .order-card-head :deep(.order-countdown) {
     display: block;
     margin: 6px 0 0;
   }

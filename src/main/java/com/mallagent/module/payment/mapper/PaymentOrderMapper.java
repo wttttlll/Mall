@@ -18,4 +18,12 @@ public interface PaymentOrderMapper extends BaseMapper<PaymentOrder> {
             WHERE order_no = #{orderNo}
             """)
     PaymentOrder selectByOrderNo(@Param("orderNo") String orderNo);
+
+    @Select("""
+            SELECT id, payment_no, order_no, user_id, amount, channel, status, paid_at, created_at
+            FROM payment_order
+            WHERE order_no = #{orderNo}
+            FOR UPDATE
+            """)
+    PaymentOrder selectByOrderNoForUpdate(@Param("orderNo") String orderNo);
 }

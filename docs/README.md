@@ -10,6 +10,7 @@
 | --- | --- | --- |
 | 开发规范 | [`../CLAUDE.md`](../CLAUDE.md) | 规范唯一来源。`docs/` 不复制第二份，Claude Code 也会自动加载根目录该文件 |
 | 快速开始与配置项 | [`../README.md`](../README.md) | 环境要求、启动方式、环境变量、接口速查 |
+| 部署与浏览器验收 | [`deployment.md`](deployment.md) | Windows 脚本、Docker、端口、日志、浏览器验收步骤 |
 | 阶段计划与验收标准 | [`development-plan.md`](development-plan.md) | 阶段划分、交付物、事务/幂等/并发矩阵、已确认决策 |
 | 学习路线 | [`learning-roadmap.md`](learning-roadmap.md) | 每阶段该掌握什么、如何自测 |
 | 需求范围 | [`requirements.md`](requirements.md) | 角色、用例、MVP 边界、非功能需求 |
@@ -32,7 +33,7 @@
 | [`modules/payment.md`](modules/payment.md) | 阶段 7 MVP 模拟支付：支付成功、库存扣减、重复支付幂等、订单状态联动 | ✅ 已维护（2026-11-02） | 模块变更时 |
 | `business-flows.md` | 下单、支付、取消、超时关闭、退款等流程与状态机 | 📝 待补 | 阶段 6 前出草案，6–9 补全 |
 | `modules/<模块>.md` | 后续模块设计（优惠券、物流、售后） | ⏳ 随阶段 | 各阶段设计确认时 |
-| `deployment.md` | 部署手册：Compose 编排、profile、环境变量、启动顺序、验证步骤 | ⏳ 计划中 | 阶段 11 |
+| [`deployment.md`](deployment.md) | Windows 一键启停、Docker 多阶段构建、Nginx 代理、端口与浏览器验收 | ✅ 已维护（2026-11-06） | 部署方式变化时 |
 | `operations.md` | 运维手册：日志与 traceId、常见故障排查、备份与恢复 | ⏳ 计划中 | 阶段 11 |
 | `retrospective.md` | 项目复盘：设计得失、踩坑记录、可改进项 | ⏳ 计划中 | 阶段 11 |
 

@@ -6,6 +6,7 @@ import com.mallagent.common.api.PageResult;
 import com.mallagent.common.exception.BusinessException;
 import com.mallagent.module.cart.api.CartCheckoutApi;
 import com.mallagent.module.cart.api.dto.CartCheckoutItem;
+import com.mallagent.module.order.config.OrderProperties;
 import com.mallagent.module.inventory.api.InventoryStockApi;
 import com.mallagent.module.inventory.api.dto.StockCommand;
 import com.mallagent.module.inventory.api.dto.StockItem;
@@ -34,6 +35,9 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -55,6 +59,7 @@ public class OrderService {
     private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("[A-Za-z0-9_-]{8,64}");
     private static final int MAX_PAGE_SIZE = 100;
     private static final int MAX_ORDER_NO_LENGTH = 64;
+    private static final ZoneId ORDER_ZONE = ZoneId.of("Asia/Shanghai");
 
     private final OrderInfoMapper orderInfoMapper;
     private final OrderItemMapper orderItemMapper;
@@ -63,6 +68,7 @@ public class OrderService {
     private final ProductSkuQueryApi productSkuQueryApi;
     private final InventoryStockApi inventoryStockApi;
     private final UserAddressQueryApi userAddressQueryApi;
+    private final OrderProperties orderProperties;
 
     /**
      * 从购物车已勾选条目创建订单并锁定库存。
@@ -181,19 +187,85 @@ public class OrderService {
             throw new BusinessException(OrderErrorCode.ORDER_STATUS_CONFLICT);
         }
 
+        LocalDateTime now = LocalDateTime.now();
+        List<OrderItem> items = releaseAndCancel(order, userId, now);
+        return toResponse(order, items);
+    }
+
+    /**
+     * 用户确认收货。仅已发货订单可确认；重复确认幂等返回当前订单。
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+            isolation = Isolation.READ_COMMITTED, rollbackFor = Exception.class)
+    public OrderResponse confirmReceipt(Long userId, String orderNo) {
+        String safeOrderNo = requireOrderNo(orderNo);
+        OrderInfo order = orderInfoMapper.selectByOrderNoForUpdate(safeOrderNo);
+        if (order == null || !order.getUserId().equals(userId)) {
+            throw new BusinessException(OrderErrorCode.ORDER_NOT_FOUND);
+        }
+        if (OrderStatus.COMPLETED.name().equals(order.getStatus())) {
+            return toResponse(order, orderItemMapper.selectByOrderId(order.getId()));
+        }
+        if (!OrderStatus.SHIPPED.name().equals(order.getStatus())) {
+            throw new BusinessException(OrderErrorCode.ORDER_STATUS_CONFLICT, "仅已发货订单可以确认收货");
+        }
+
+        LocalDateTime now = LocalDateTime.now().truncatedTo(ChronoUnit.MILLIS);
+        int updated = orderInfoMapper.markCompleted(safeOrderNo, userId, now);
+        if (updated != 1) {
+            throw new BusinessException(OrderErrorCode.ORDER_STATUS_CONFLICT);
+        }
+        order.setStatus(OrderStatus.COMPLETED.name());
+        order.setCompletedAt(now);
+        return toResponse(order, orderItemMapper.selectByOrderId(order.getId()));
+    }
+
+    /**
+     * 超时扫描调用：在订单行锁内重新确认状态和创建时间，再释放库存并取消。
+     * 返回 true 表示本次调用完成了取消；重复扫描或已被支付时返回 false。
+     */
+    @Transactional(propagation = Propagation.REQUIRED,
+            isolation = Isolation.READ_COMMITTED, rollbackFor = Exception.class)
+    public boolean cancelExpired(String orderNo, LocalDateTime now) {
+        String safeOrderNo = requireOrderNo(orderNo);
+        OrderInfo order = orderInfoMapper.selectByOrderNoForUpdate(safeOrderNo);
+        if (order == null || !OrderStatus.PENDING_PAYMENT.name().equals(order.getStatus())) {
+            return false;
+        }
+        if (!isExpired(order, now)) {
+            return false;
+        }
+        releaseAndCancel(order, null, now);
+        return true;
+    }
+
+    private List<OrderItem> releaseAndCancel(OrderInfo order, Long operatorId, LocalDateTime now) {
         List<OrderItem> items = orderItemMapper.selectByOrderId(order.getId());
         inventoryStockApi.release(new StockCommand(order.getOrderNo(), items.stream()
                 .map(item -> new StockItem(item.getSkuId(), item.getQuantity()))
                 .toList()));
 
-        LocalDateTime now = LocalDateTime.now();
-        int updated = orderInfoMapper.markCancelled(order.getOrderNo(), userId, now);
+        int updated = orderInfoMapper.markCancelled(order.getOrderNo(), operatorId, now);
         if (updated != 1) {
             throw new BusinessException(OrderErrorCode.ORDER_STATUS_CONFLICT);
         }
         order.setStatus(OrderStatus.CANCELLED.name());
         order.setCancelledAt(now);
-        return toResponse(order, items);
+        return items;
+    }
+
+    private boolean isExpired(OrderInfo order, LocalDateTime now) {
+        return order.getCreatedAt() != null
+                && !now.isBefore(order.getCreatedAt().plusMinutes(orderProperties.getTimeoutMinutes()));
+    }
+
+    private OffsetDateTime payDeadline(OrderInfo order) {
+        return order.getCreatedAt() == null
+                ? null
+                : order.getCreatedAt()
+                .plusMinutes(orderProperties.getTimeoutMinutes())
+                .atZone(ORDER_ZONE)
+                .toOffsetDateTime();
     }
 
     private List<OrderLine> buildOrderLines(List<CartCheckoutItem> cartItems) {
@@ -325,8 +397,13 @@ public class OrderService {
                 order.getReceiverPostalCode(),
                 itemResponses,
                 order.getCreatedAt(),
+                payDeadline(order),
                 order.getPaidAt(),
-                order.getCancelledAt()
+                order.getCancelledAt(),
+                order.getShippingCompany(),
+                order.getTrackingNo(),
+                order.getShippedAt(),
+                order.getCompletedAt()
         );
     }
 
@@ -337,6 +414,7 @@ public class OrderService {
                 order.getTotalAmount(),
                 order.getItemCount(),
                 order.getCreatedAt(),
+                payDeadline(order),
                 order.getPaidAt(),
                 order.getCancelledAt()
         );

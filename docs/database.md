@@ -1,7 +1,7 @@
 # MallAgent 数据库设计
 
 > 适用范围：阶段 0–9（MVP）。本文登记表、索引与约束；字段级业务说明见各模块文档。
-> 最后更新：2026-11-02（阶段 6/7 MVP 简化版新增订单与模拟支付三表）。
+> 最后更新：2026-11-06（第五轮，新增售后与退款表 V16）。
 
 ## 1. 通用约定
 
@@ -30,6 +30,10 @@
 | V10 | `V10__create_inventory.sql` | 库存主记录 `stock_sku`、库存流水 `stock_flow` |
 | V11 | `V11__seed_inventory_permissions.sql` | `inventory:*` 权限种子及角色授权 |
 | V12 | `V12__create_order_payment.sql` | 订单 `order_info`、订单明细 `order_item`、模拟支付单 `payment_order` |
+| V13 | `V13__add_order_timeout_scan_index.sql` | 订单超时扫描索引 `(status, created_at)` |
+| V14 | `V14__add_order_fulfillment.sql` | 订单物流字段、发货/完成时间、状态约束与订单管理权限 |
+| V15 | `V15__create_favorites_and_reviews.sql` | 商品收藏 `user_favorite`、商品评价 `product_review` |
+| V16 | `V16__create_after_sale_and_refund.sql` | 售后 `after_sale_order`、模拟退款 `payment_refund`、售后权限 |
 
 已执行迁移禁止修改；修正错误只能新增版本。
 
@@ -104,9 +108,9 @@
 | `order_item` | 订单明细快照 | `UNIQUE(order_id, sku_id)`；数量、单价、行金额 CHECK |
 | `payment_order` | 模拟支付单 | `UNIQUE(payment_no)`；`UNIQUE(order_no)`；金额 CHECK |
 
-`order_info` 关键字段：`order_no`、`user_id`、`status`、`total_amount`、`item_count`、收货人快照、`idempotency_key`、`paid_at`、`cancelled_at`、审计字段、`version`。
+`order_info` 关键字段：`order_no`、`user_id`、`status`、`total_amount`、`item_count`、收货人快照、`idempotency_key`、`paid_at`、`cancelled_at`、`shipping_company`、`tracking_no`、`shipped_at`、`completed_at`、审计字段、`version`。
 
-订单状态：`PENDING_PAYMENT`、`PAID`、`CANCELLED`。MVP 简化版不实现超时关闭、物流和售后。
+订单状态：`PENDING_PAYMENT`、`PAID`、`SHIPPED`、`COMPLETED`、`CANCELLED`。物流只保存快递公司和物流单号；不实现真实物流事件和售后。
 
 `order_item` 关键字段：`order_id`、`sku_id`、`spu_id`、`sku_code`、`spu_name`、`image_url`、`spec_text`、`unit_price`、`quantity`、`line_amount`。商品信息为下单时快照，不随后续商品变更而改变。
 
@@ -114,11 +118,33 @@
 
 索引：
 
-- `order_info`：`UK(order_no)`、`UK(user_id, idempotency_key)`、`KEY(user_id, id)`、`KEY(user_id, status)`。
+- `order_info`：`UK(order_no)`、`UK(user_id, idempotency_key)`、`KEY(user_id, id)`、`KEY(user_id, status)`、`KEY(status, created_at)`（V13 超时扫描）、`KEY(status, id)`（V14 管理端状态筛选）。
 - `order_item`：`UK(order_id, sku_id)`、`KEY(order_id)`、`KEY(sku_id)`。
 - `payment_order`：`UK(payment_no)`、`UK(order_no)`、`KEY(user_id)`。
 
 订单状态流转由条件更新和订单行锁保证；模拟支付与取消共用同一订单行锁。详见 [`modules/order.md`](modules/order.md)。
+
+### 3.6 收藏与评价（阶段 10 增量）
+
+| 表 | 用途 | 关键约束 |
+| --- | --- | --- |
+| `user_favorite` | 用户商品收藏 | `UNIQUE(user_id, spu_id)`；`KEY(user_id, id)`；`KEY(spu_id)` |
+| `product_review` | 商品评价 | `UNIQUE(order_item_id)`；评分 CHECK 1–5；`KEY(spu_id, id)`；`KEY(user_id, id)` |
+
+`user_favorite` 关键字段：`user_id`、`spu_id`、`created_at`。收藏不复制商品快照；查询时通过商品 SPU 只读 API 补全，商品下架或逻辑删除后保留收藏记录并返回不可用原因。
+
+`product_review` 关键字段：`user_id`、`order_no`、`order_item_id`、`spu_id`、`sku_id`、`spu_name`、`sku_code`、`image_url`、`rating`、`content`、`created_at`。评分 1–5，内容可选且最长 1000 字符；订单明细唯一约束防止重复评价，商品快照保证历史评价可展示。评价与收藏均由后端从登录身份和订单明细校验，不信任前端传入的用户或商品归属。
+
+### 3.7 售后与模拟退款（阶段 9 MVP 简化版）
+
+| 表 | 用途 | 关键约束 |
+| --- | --- | --- |
+| `after_sale_order` | 整单退货退款申请 | `UNIQUE(after_sale_no)`；`active_order_no` 生成列唯一约束；状态 CHECK |
+| `payment_refund` | 模拟退款单 | `UNIQUE(refund_no)`；`UNIQUE(after_sale_no)`；`UNIQUE(order_no)`；金额 CHECK |
+
+`after_sale_order` 关键字段：`after_sale_no`、`order_no`、`user_id`、`status`、`refund_amount`、`reason`、`description`、`reject_reason`、`reviewed_by/reviewed_at`、`completed_by/completed_at`、`created_at/updated_at`。`active_order_no` 生成列仅在 `APPLIED/APPROVED/COMPLETED` 时等于 `order_no`，保证一个订单最多一个有效售后；`REJECTED` 生成 NULL，允许重新申请。
+
+`payment_refund` 关键字段：`refund_no`、`after_sale_no`、`order_no`、`payment_no`、`user_id`、`amount`、`channel`（MOCK）、`status`（SUCCESS）、`refunded_at`。退款金额来自原 `payment_order.amount`，不接受客户端金额；一个订单最多一条退款记录。
 
 ## 4. 索引设计原则
 

@@ -4,6 +4,9 @@ spring:
     # 本地开发默认使用本机 MySQL 的 root 账号；Docker Compose 环境请通过环境变量覆盖
     username: ${MYSQL_USER:root}
     password: ${MYSQL_PASSWORD:123456}
+    hikari:
+      # 与生产调用方（订单/支付/管理端）的 READ_COMMITTED 一致，避免库存行锁测试出现间隙锁死锁
+      transaction-isolation: TRANSACTION_READ_COMMITTED
 
   data:
     redis:
@@ -26,6 +29,12 @@ mallagent:
     username: admin
     init-password: Admin@123456
     init-enabled: true
+  order:
+    # 测试中手动调用扫描，避免后台定时任务干扰断言
+    timeout-minutes: 30
+    timeout-scan-interval-ms: 3600000
+    timeout-scan-initial-delay-ms: 3600000
+    timeout-batch-size: 100
 
 logging:
   level:

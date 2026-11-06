@@ -1,14 +1,22 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import EmptyState from '../components/EmptyState.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
+import FavoriteButton from '../components/FavoriteButton.vue'
 import LoadingState from '../components/LoadingState.vue'
+import StarRating from '../components/StarRating.vue'
 import { cartApi } from '../api/cart'
+import { favoriteApi } from '../api/favorite'
 import { productApi } from '../api/product'
-import { formatMoney } from '../utils/format'
+import { reviewApi } from '../api/review'
+import { useAuthStore } from '../stores/auth'
+import { formatDateTime, formatMoney } from '../utils/format'
 import { createIdempotencyKey } from '../utils/idempotency'
 
 const route = useRoute()
+const router = useRouter()
+const auth = useAuthStore()
 const product = ref(null)
 const loading = ref(true)
 const error = ref('')
@@ -16,6 +24,16 @@ const selectedSkuId = ref(null)
 const quantity = ref(1)
 const adding = ref(false)
 const notice = ref('')
+const favorite = ref(false)
+const favoriteBusy = ref(false)
+const favoriteError = ref('')
+const favoriteNotice = ref('')
+const reviews = ref([])
+const averageRating = ref(0)
+const reviewCount = ref(0)
+const reviewsLoading = ref(false)
+const reviewsError = ref('')
+const reviewPage = reactive({ pageNum: 1, pageSize: 5, total: 0 })
 
 const activeSkus = computed(() =>
   (product.value?.skus || []).filter((sku) => sku.status === 1)
@@ -35,14 +53,87 @@ const displayImage = computed(() => selectedSku.value?.imageUrl || product.value
 async function loadProduct() {
   loading.value = true
   error.value = ''
+  favoriteError.value = ''
+  favoriteNotice.value = ''
+  reviewsError.value = ''
+  reviews.value = []
+  averageRating.value = 0
+  reviewCount.value = 0
+  reviewPage.pageNum = 1
   try {
     product.value = await productApi.detail(route.params.id)
     selectedSkuId.value = activeSkus.value[0]?.id ?? null
+    await Promise.all([loadFavorite(), loadReviews(true)])
   } catch (err) {
     error.value = err.message || '商品加载失败'
   } finally {
     loading.value = false
   }
+}
+
+async function loadFavorite() {
+  favoriteError.value = ''
+  if (!auth.isAuthenticated) {
+    favorite.value = false
+    return
+  }
+  try {
+    const data = await favoriteApi.status([Number(route.params.id)])
+    favorite.value = (data.favoriteSpuIds || []).includes(Number(route.params.id))
+  } catch (err) {
+    favoriteError.value = err.message || '收藏状态加载失败'
+  }
+}
+
+async function toggleFavorite() {
+  if (favoriteBusy.value) return
+  if (!auth.isAuthenticated) {
+    router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
+  favoriteBusy.value = true
+  favoriteError.value = ''
+  favoriteNotice.value = ''
+  try {
+    const data = favorite.value
+      ? await favoriteApi.remove(product.value.id)
+      : await favoriteApi.add(product.value.id)
+    favorite.value = data.favorite
+    favoriteNotice.value = data.favorite ? '已收藏该商品' : '已取消收藏'
+  } catch (err) {
+    favoriteError.value = err.message || '收藏操作失败'
+  } finally {
+    favoriteBusy.value = false
+  }
+}
+
+async function loadReviews(reset = false) {
+  if (reset) {
+    reviewPage.pageNum = 1
+  }
+  reviewsLoading.value = true
+  reviewsError.value = ''
+  try {
+    const data = await reviewApi.list(route.params.id, {
+      pageNum: reviewPage.pageNum,
+      pageSize: reviewPage.pageSize
+    })
+    const list = data.list || []
+    reviews.value = reset ? list : [...reviews.value, ...list]
+    averageRating.value = Number(data.averageRating ?? 0)
+    reviewCount.value = Number(data.reviewCount ?? 0)
+    reviewPage.total = Number(data.total ?? 0)
+  } catch (err) {
+    reviewsError.value = err.message || '评价加载失败'
+  } finally {
+    reviewsLoading.value = false
+  }
+}
+
+async function loadMoreReviews() {
+  if (reviewsLoading.value) return
+  reviewPage.pageNum += 1
+  await loadReviews(false)
 }
 
 function changeQuantity(delta) {
@@ -57,6 +148,10 @@ function onQuantityInput(event) {
 
 async function addToCart() {
   if (!selectedSku.value || adding.value) return
+  if (!auth.isAuthenticated) {
+    router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
   adding.value = true
   notice.value = ''
   try {
@@ -70,6 +165,9 @@ async function addToCart() {
 }
 
 onMounted(loadProduct)
+watch(() => route.params.id, (next, previous) => {
+  if (next && next !== previous) loadProduct()
+})
 </script>
 
 <template>
@@ -102,7 +200,15 @@ onMounted(loadProduct)
             <span v-if="product.categoryName" class="tag">{{ product.categoryName }}</span>
             <span v-if="product.brandName" class="tag tag-muted">{{ product.brandName }}</span>
           </div>
-          <h1>{{ product.name }}</h1>
+          <div class="detail-title-row">
+            <h1>{{ product.name }}</h1>
+            <FavoriteButton
+              show-label
+              :active="favorite"
+              :busy="favoriteBusy"
+              @toggle="toggleFavorite"
+            />
+          </div>
           <p class="detail-subtitle">{{ product.subtitle }}</p>
 
           <div class="price-panel">
@@ -143,10 +249,12 @@ onMounted(loadProduct)
           </div>
 
           <ErrorBanner :message="error" />
+          <ErrorBanner :message="favoriteError" />
           <div v-if="notice" class="success-banner">
             {{ notice }}
             <RouterLink to="/cart">去购物车结算 →</RouterLink>
           </div>
+          <div v-if="favoriteNotice" class="success-banner">{{ favoriteNotice }}</div>
 
           <button
             class="btn btn-primary btn-lg btn-block"
@@ -163,6 +271,54 @@ onMounted(loadProduct)
           </div>
         </section>
       </div>
+
+      <section class="surface-card review-section">
+        <div class="review-section-head">
+          <div>
+            <span class="eyebrow">Reviews</span>
+            <h2>商品评价</h2>
+          </div>
+          <div class="review-summary">
+            <StarRating :model-value="averageRating" readonly show-value size="sm" />
+            <span>{{ reviewCount }} 条评价</span>
+          </div>
+        </div>
+
+        <ErrorBanner :message="reviewsError" retryable @retry="loadReviews(true)" />
+        <LoadingState v-if="reviewsLoading && !reviews.length" label="正在加载评价..." />
+
+        <EmptyState
+          v-else-if="!reviews.length && !reviewsError"
+          title="暂无商品评价"
+          description="购买并完成订单后，可以在这里分享你的使用感受。"
+        />
+
+        <template v-else>
+          <div class="review-list">
+            <article v-for="review in reviews" :key="review.id" class="review-item">
+              <div class="review-avatar">{{ (review.displayName || '匿').slice(0, 1) }}</div>
+              <div class="review-main">
+                <div class="review-meta">
+                  <strong>{{ review.displayName }}</strong>
+                  <StarRating :model-value="review.rating" readonly size="sm" />
+                  <span class="review-time">{{ formatDateTime(review.createdAt) }}</span>
+                </div>
+                <p>{{ review.content || '用户未填写文字评价' }}</p>
+              </div>
+            </article>
+          </div>
+
+          <button
+            v-if="reviews.length < reviewPage.total"
+            class="btn btn-ghost review-more"
+            type="button"
+            :disabled="reviewsLoading"
+            @click="loadMoreReviews"
+          >
+            {{ reviewsLoading ? '加载中...' : '查看更多评价' }}
+          </button>
+        </template>
+      </section>
     </template>
   </div>
 </template>
@@ -215,11 +371,23 @@ onMounted(loadProduct)
   border: 1px solid var(--border);
 }
 
-.detail-info h1 {
+.detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.detail-title-row h1 {
   margin: 10px 0 8px;
   font-size: clamp(26px, 3.4vw, 38px);
   letter-spacing: -0.035em;
   color: var(--text-strong);
+}
+
+.detail-title-row :deep(.favorite-btn) {
+  margin-top: 14px;
+  flex: none;
 }
 
 .detail-subtitle {
@@ -321,6 +489,95 @@ onMounted(loadProduct)
   margin: 0;
 }
 
+.review-section {
+  margin-top: 28px;
+  padding: 24px;
+}
+
+.review-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-section-head h2 {
+  margin: 5px 0 0;
+  color: var(--text-strong);
+  font-size: 21px;
+}
+
+.review-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.review-item {
+  display: flex;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-avatar {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.review-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.review-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.review-meta strong {
+  color: var(--text-strong);
+}
+
+.review-time {
+  margin-left: auto;
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.review-main p {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.7;
+  white-space: pre-line;
+}
+
+.review-more {
+  display: flex;
+  margin: 18px auto 0;
+}
+
 @media (max-width: 860px) {
   .detail-layout {
     grid-template-columns: 1fr;
@@ -329,6 +586,25 @@ onMounted(loadProduct)
 
   .detail-media {
     position: static;
+  }
+
+  .review-section-head {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 600px) {
+  .detail-title-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .detail-title-row :deep(.favorite-btn) {
+    margin-top: 0;
+  }
+
+  .review-summary {
+    align-items: flex-start;
   }
 }
 </style>

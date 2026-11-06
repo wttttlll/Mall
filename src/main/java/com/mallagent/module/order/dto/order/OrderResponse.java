@@ -2,6 +2,7 @@ package com.mallagent.module.order.dto.order;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -21,8 +22,13 @@ public record OrderResponse(
         String receiverPostalCode,
         List<OrderItemResponse> items,
         LocalDateTime createdAt,
+        OffsetDateTime payDeadline,
         LocalDateTime paidAt,
-        LocalDateTime cancelledAt
+        LocalDateTime cancelledAt,
+        String shippingCompany,
+        String trackingNo,
+        LocalDateTime shippedAt,
+        LocalDateTime completedAt
 ) {
 
     public OrderResponse {

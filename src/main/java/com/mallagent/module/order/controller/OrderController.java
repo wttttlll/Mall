@@ -76,6 +76,18 @@ public class OrderController {
         return Result.success(orderService.detail(currentUserId(), orderNo));
     }
 
+    @Operation(summary = "确认收货",
+            description = "仅已发货订单可确认；重复确认幂等返回当前订单")
+    @ApiResponses({
+            @ApiResponse(responseCode = "401", description = "未认证"),
+            @ApiResponse(responseCode = "404", description = "订单不存在"),
+            @ApiResponse(responseCode = "409", description = "订单未发货或状态不允许")
+    })
+    @PostMapping("/{orderNo}/confirm-receipt")
+    public Result<OrderResponse> confirmReceipt(@PathVariable String orderNo) {
+        return Result.success(orderService.confirmReceipt(currentUserId(), orderNo));
+    }
+
     @Operation(summary = "取消待支付订单",
             description = "取消时释放库存；已取消订单重复取消幂等成功")
     @ApiResponses({

@@ -4,8 +4,8 @@ import com.mallagent.common.exception.BusinessException;
 import com.mallagent.module.order.api.OrderPaymentApi;
 import com.mallagent.module.order.api.dto.OrderPaymentItem;
 import com.mallagent.module.order.api.dto.OrderPaymentView;
+import com.mallagent.module.order.config.OrderProperties;
 import com.mallagent.module.order.entity.OrderInfo;
-import com.mallagent.module.order.entity.OrderItem;
 import com.mallagent.module.order.error.OrderErrorCode;
 import com.mallagent.module.order.mapper.OrderInfoMapper;
 import com.mallagent.module.order.mapper.OrderItemMapper;
@@ -26,6 +26,7 @@ public class OrderPaymentApiImpl implements OrderPaymentApi {
 
     private final OrderInfoMapper orderInfoMapper;
     private final OrderItemMapper orderItemMapper;
+    private final OrderProperties orderProperties;
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
@@ -42,6 +43,9 @@ public class OrderPaymentApiImpl implements OrderPaymentApi {
                 order.getUserId(),
                 order.getStatus(),
                 order.getTotalAmount(),
+                order.getCreatedAt() == null
+                        ? null
+                        : order.getCreatedAt().plusMinutes(orderProperties.getTimeoutMinutes()),
                 items
         );
     }

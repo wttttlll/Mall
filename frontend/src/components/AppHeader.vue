@@ -23,7 +23,9 @@ async function logout() {
         <RouterLink to="/products">商品</RouterLink>
         <RouterLink to="/cart">购物车</RouterLink>
         <RouterLink to="/orders">我的订单</RouterLink>
-        <RouterLink to="/addresses">收货地址</RouterLink>
+        <RouterLink to="/favorites">我的收藏</RouterLink>
+        <RouterLink to="/profile">个人中心</RouterLink>
+        <RouterLink v-if="auth.canAccessAdmin" to="/admin/products">管理后台</RouterLink>
       </nav>
 
       <div class="header-actions">

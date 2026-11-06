@@ -1,30 +1,161 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import AfterSaleStatusBadge from '../components/AfterSaleStatusBadge.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
 import LoadingState from '../components/LoadingState.vue'
+import OrderCountdown from '../components/OrderCountdown.vue'
 import OrderStatusBadge from '../components/OrderStatusBadge.vue'
+import StarRating from '../components/StarRating.vue'
+import { afterSaleApi } from '../api/afterSale'
 import { orderApi } from '../api/order'
 import { paymentApi } from '../api/payment'
+import { reviewApi } from '../api/review'
 import { formatDateTime, formatMoney } from '../utils/format'
 
 const route = useRoute()
 const order = ref(null)
 const loading = ref(true)
 const error = ref('')
+const reviewError = ref('')
 const message = ref('')
 const acting = ref(false)
+const reviewsBySku = ref({})
+const reviewsLoading = ref(false)
+const afterSales = ref([])
+const afterSaleLoading = ref(false)
+const afterSaleError = ref('')
+const reviewForm = reactive({
+  visible: false,
+  skuId: null,
+  skuName: '',
+  rating: 5,
+  content: '',
+  submitting: false
+})
+let expiredRefreshTimer = null
+let silentRefreshing = false
 
-async function loadOrder() {
-  loading.value = true
+const canReview = computed(() => order.value?.status === 'COMPLETED')
+const latestAfterSale = computed(() => afterSales.value[0] || null)
+const canApplyAfterSale = computed(() =>
+  order.value?.status === 'COMPLETED' &&
+  !afterSaleLoading.value &&
+  !afterSaleError.value &&
+  (!latestAfterSale.value || latestAfterSale.value.status === 'REJECTED')
+)
+
+async function loadOrder(silent = false) {
+  if (!silent) loading.value = true
   error.value = ''
   try {
     order.value = await orderApi.detail(route.params.orderNo)
+    await Promise.all([loadMyReviews(), loadMyAfterSales()])
   } catch (err) {
     error.value = err.message || '订单加载失败'
   } finally {
-    loading.value = false
+    if (!silent) loading.value = false
   }
+}
+
+async function loadMyAfterSales() {
+  if (!order.value) return
+  afterSaleLoading.value = true
+  afterSaleError.value = ''
+  try {
+    const data = await afterSaleApi.list({
+      pageNum: 1,
+      pageSize: 10,
+      orderNo: order.value.orderNo
+    })
+    afterSales.value = data.list || []
+  } catch (err) {
+    afterSaleError.value = err.message || '售后状态加载失败'
+  } finally {
+    afterSaleLoading.value = false
+  }
+}
+
+async function loadMyReviews() {
+  if (!order.value || order.value.status !== 'COMPLETED') {
+    reviewsBySku.value = {}
+    reviewForm.visible = false
+    return
+  }
+  reviewsLoading.value = true
+  reviewError.value = ''
+  try {
+    const data = await reviewApi.mine({
+      pageNum: 1,
+      pageSize: 100,
+      orderNo: order.value.orderNo
+    })
+    reviewsBySku.value = Object.fromEntries((data.list || []).map((review) => [review.skuId, review]))
+  } catch (err) {
+    reviewError.value = err.message || '评价状态加载失败'
+  } finally {
+    reviewsLoading.value = false
+  }
+}
+
+function openReview(item) {
+  reviewForm.visible = true
+  reviewForm.skuId = item.skuId
+  reviewForm.skuName = item.spuName || item.skuCode || `SKU ${item.skuId}`
+  reviewForm.rating = 5
+  reviewForm.content = ''
+  reviewError.value = ''
+  message.value = ''
+}
+
+function closeReview() {
+  reviewForm.visible = false
+  reviewForm.skuId = null
+  reviewForm.content = ''
+}
+
+async function submitReview() {
+  if (!reviewForm.skuId || reviewForm.submitting) return
+  if (reviewForm.rating < 1 || reviewForm.rating > 5) {
+    reviewError.value = '请选择 1～5 星评分'
+    return
+  }
+  reviewForm.submitting = true
+  reviewError.value = ''
+  message.value = ''
+  try {
+    await reviewApi.create({
+      orderNo: order.value.orderNo,
+      skuId: reviewForm.skuId,
+      rating: reviewForm.rating,
+      content: reviewForm.content.trim() || null
+    })
+    message.value = '评价已提交，感谢你的分享'
+    closeReview()
+    await loadMyReviews()
+  } catch (err) {
+    reviewError.value = err.message || '评价提交失败'
+  } finally {
+    reviewForm.submitting = false
+  }
+}
+
+function handleExpired() {
+  if (expiredRefreshTimer) return
+  expiredRefreshTimer = window.setTimeout(async () => {
+    expiredRefreshTimer = null
+    if (silentRefreshing) return
+    silentRefreshing = true
+    const previousStatus = order.value?.status
+    try {
+      await loadOrder(true)
+      if (previousStatus === 'PENDING_PAYMENT' && order.value?.status === 'CANCELLED') {
+        message.value = '订单已超时自动取消，库存已释放'
+      }
+    } finally {
+      silentRefreshing = false
+    }
+  }, 1500)
 }
 
 async function pay() {
@@ -35,9 +166,31 @@ async function pay() {
   try {
     await paymentApi.pay(order.value.orderNo)
     await loadOrder()
-    message.value = '模拟支付成功，订单已更新为已支付'
+    message.value = '模拟支付成功，订单已进入待发货'
   } catch (err) {
-    error.value = err.message || '支付失败'
+    if (err.code === 17005) {
+      await loadOrder(true)
+      error.value = '订单已超过支付时间，系统将自动取消'
+    } else {
+      error.value = err.message || '支付失败'
+    }
+  } finally {
+    acting.value = false
+  }
+}
+
+async function confirmReceipt() {
+  if (!order.value || acting.value) return
+  if (!window.confirm('确认已经收到该订单的商品吗？')) return
+  acting.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    await orderApi.confirmReceipt(order.value.orderNo)
+    await loadOrder()
+    message.value = '已确认收货，订单已完成'
+  } catch (err) {
+    error.value = err.message || '确认收货失败'
   } finally {
     acting.value = false
   }
@@ -61,6 +214,9 @@ async function cancel() {
 }
 
 onMounted(loadOrder)
+onBeforeUnmount(() => {
+  if (expiredRefreshTimer) window.clearTimeout(expiredRefreshTimer)
+})
 </script>
 
 <template>
@@ -79,6 +235,12 @@ onMounted(loadOrder)
                 <span class="eyebrow">Order</span>
                 <h1>{{ order.orderNo }}</h1>
                 <p class="text-muted">下单时间：{{ formatDateTime(order.createdAt) }}</p>
+                <OrderCountdown
+                  v-if="order.status === 'PENDING_PAYMENT'"
+                  :deadline="order.payDeadline"
+                  active
+                  @expired="handleExpired"
+                />
               </div>
               <OrderStatusBadge :status="order.status" />
             </div>
@@ -94,6 +256,30 @@ onMounted(loadOrder)
                 取消订单
               </button>
             </div>
+            <div v-else-if="order.status === 'SHIPPED'" class="order-actions">
+              <button class="btn btn-primary" type="button" :disabled="acting" @click="confirmReceipt">
+                {{ acting ? '处理中...' : '确认收货' }}
+              </button>
+            </div>
+
+            <div v-if="order.status === 'COMPLETED'" class="after-sale-entry">
+              <div v-if="latestAfterSale" class="after-sale-status-line">
+                <span class="text-muted">售后状态</span>
+                <AfterSaleStatusBadge :status="latestAfterSale.status" />
+                <RouterLink :to="`/after-sales/${latestAfterSale.afterSaleNo}`" class="after-sale-link">
+                  查看售后
+                </RouterLink>
+              </div>
+              <span v-else-if="afterSaleLoading" class="text-muted">正在加载售后状态...</span>
+              <RouterLink
+                v-if="canApplyAfterSale"
+                class="btn btn-danger-ghost"
+                :to="`/after-sales/apply?orderNo=${order.orderNo}`"
+              >
+                {{ latestAfterSale?.status === 'REJECTED' ? '重新申请售后' : '申请售后' }}
+              </RouterLink>
+            </div>
+            <ErrorBanner :message="afterSaleError" />
           </section>
 
           <section class="surface-card detail-card">
@@ -109,23 +295,90 @@ onMounted(loadOrder)
             </div>
           </section>
 
+          <section v-if="order.shippingCompany || order.trackingNo" class="surface-card detail-card">
+            <h2>物流信息</h2>
+            <div class="info-row">
+              <span>快递公司</span>
+              <strong>{{ order.shippingCompany || '-' }}</strong>
+            </div>
+            <div class="info-row">
+              <span>物流单号</span>
+              <span>{{ order.trackingNo || '-' }}</span>
+            </div>
+            <div class="info-row">
+              <span>发货时间</span>
+              <span>{{ formatDateTime(order.shippedAt) }}</span>
+            </div>
+          </section>
+
           <section class="surface-card detail-card">
             <div class="section-title-row">
               <h2>商品明细</h2>
               <span class="text-muted">共 {{ order.itemCount }} 种</span>
             </div>
-            <div v-for="item in order.items" :key="item.skuId" class="order-item">
-              <div class="order-thumb">
-                <img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.spuName" />
-                <div v-else class="placeholder">暂无图片</div>
+            <div v-for="item in order.items" :key="item.skuId" class="order-item-wrap">
+              <div class="order-item">
+                <div class="order-thumb">
+                  <img v-if="item.imageUrl" :src="item.imageUrl" :alt="item.spuName" />
+                  <div v-else class="placeholder">暂无图片</div>
+                </div>
+                <div class="order-item-main">
+                  <strong>{{ item.spuName || item.skuCode }}</strong>
+                  <span>{{ item.specText || item.skuCode }}</span>
+                </div>
+                <span>{{ formatMoney(item.unitPrice) }} × {{ item.quantity }}</span>
+                <strong class="line-amount">{{ formatMoney(item.lineAmount) }}</strong>
               </div>
-              <div class="order-item-main">
-                <strong>{{ item.spuName || item.skuCode }}</strong>
-                <span>{{ item.specText || item.skuCode }}</span>
+              <div v-if="canReview" class="order-item-review">
+                <template v-if="reviewsBySku[item.skuId]">
+                  <StarRating :model-value="reviewsBySku[item.skuId].rating" readonly size="sm" />
+                  <span class="text-muted">已评价</span>
+                </template>
+                <button
+                  v-else
+                  class="btn btn-ghost btn-sm"
+                  type="button"
+                  :disabled="reviewsLoading"
+                  @click="openReview(item)"
+                >
+                  评价商品
+                </button>
               </div>
-              <span>{{ formatMoney(item.unitPrice) }} × {{ item.quantity }}</span>
-              <strong class="line-amount">{{ formatMoney(item.lineAmount) }}</strong>
             </div>
+          </section>
+
+          <section v-if="reviewForm.visible" class="surface-card detail-card">
+            <div class="section-title-row">
+              <h2>评价商品</h2>
+              <button class="btn btn-ghost btn-sm" type="button" @click="closeReview">取消</button>
+            </div>
+            <p class="text-muted review-target">{{ reviewForm.skuName }}</p>
+            <ErrorBanner :message="reviewError" />
+            <form class="form-stack" @submit.prevent="submitReview">
+              <div class="rating-input">
+                <span>评分</span>
+                <StarRating v-model="reviewForm.rating" size="lg" />
+                <strong>{{ reviewForm.rating }} 星</strong>
+              </div>
+              <label class="field">
+                <span>文字评价（选填）</span>
+                <textarea
+                  v-model="reviewForm.content"
+                  rows="4"
+                  maxlength="1000"
+                  placeholder="分享商品质量、使用体验等"
+                  :disabled="reviewForm.submitting"
+                ></textarea>
+              </label>
+              <div class="order-actions">
+                <button class="btn btn-primary" type="submit" :disabled="reviewForm.submitting">
+                  {{ reviewForm.submitting ? '提交中...' : '提交评价' }}
+                </button>
+                <button class="btn btn-ghost" type="button" :disabled="reviewForm.submitting" @click="closeReview">
+                  取消
+                </button>
+              </div>
+            </form>
           </section>
         </div>
 
@@ -139,16 +392,28 @@ onMounted(loadOrder)
             <span>商品金额</span>
             <strong class="total">{{ formatMoney(order.totalAmount) }}</strong>
           </div>
+          <div v-if="order.payDeadline" class="info-row">
+            <span>支付截止</span>
+            <span>{{ formatDateTime(order.payDeadline) }}</span>
+          </div>
           <div class="info-row">
             <span>支付时间</span>
             <span>{{ formatDateTime(order.paidAt) }}</span>
+          </div>
+          <div v-if="order.shippedAt" class="info-row">
+            <span>发货时间</span>
+            <span>{{ formatDateTime(order.shippedAt) }}</span>
+          </div>
+          <div v-if="order.completedAt" class="info-row">
+            <span>完成时间</span>
+            <span>{{ formatDateTime(order.completedAt) }}</span>
           </div>
           <div class="info-row">
             <span>取消时间</span>
             <span>{{ formatDateTime(order.cancelledAt) }}</span>
           </div>
           <p class="summary-note">
-            当前为模拟支付，不涉及真实资金；MVP 暂未实现物流与售后。
+            当前为模拟支付与模拟物流，不涉及真实资金与快递接口；物流信息以商家发货记录为准。
           </p>
           <RouterLink class="btn btn-ghost btn-block" to="/orders">返回订单列表</RouterLink>
         </aside>
@@ -196,10 +461,38 @@ onMounted(loadOrder)
   word-break: break-all;
 }
 
+.detail-head :deep(.order-countdown) {
+  margin-top: 8px;
+}
+
 .order-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.after-sale-entry {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.after-sale-status-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+}
+
+.after-sale-link {
+  color: var(--primary);
+  font-weight: 700;
+  font-size: 13px;
 }
 
 .receiver-card {
@@ -226,15 +519,44 @@ onMounted(loadOrder)
   margin-bottom: 10px;
 }
 
+.order-item-wrap {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
 .order-item {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr) auto auto;
   gap: 14px;
   align-items: center;
-  padding: 12px 0;
-  border-top: 1px solid var(--border);
   font-size: 13px;
   color: var(--text-muted);
+}
+
+.order-item-review {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.review-target {
+  margin: -4px 0 16px;
+  font-size: 13px;
+}
+
+.rating-input {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.rating-input strong {
+  color: #b45309;
+  font-size: 13px;
 }
 
 .order-thumb {

@@ -50,6 +50,14 @@ public class OrderInfo {
 
     private LocalDateTime cancelledAt;
 
+    private String shippingCompany;
+
+    private String trackingNo;
+
+    private LocalDateTime shippedAt;
+
+    private LocalDateTime completedAt;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

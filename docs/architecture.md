@@ -128,19 +128,21 @@ Redis Key 统一格式：`mallagent:{module}:{biz}:{id}`。缓存必须设置 TT
 
 ## 6. 横切能力
 
-- 安全：JWT 无状态认证，Spring Security 过滤链，方法级权限；用户端接口默认要求登录。
+- 安全：JWT 无状态认证，Spring Security 过滤链，方法级权限；商品列表/详情/公开评价允许未登录浏览，其余用户端接口默认要求登录。管理后台前端按 `/users/me` 返回的权限码显示入口和按钮，但真正权限始终由后端 `@PreAuthorize` 校验；普通用户访问 `/admin` 会被前端重定向，后端仍返回 403。
 - 统一响应：`Result<T>`，业务码 0 表示成功；HTTP 状态码保留语义。
 - 异常：`BusinessException` + `ErrorCode`，全局异常处理不暴露堆栈。
 - 链路：`traceId` 贯穿响应与日志。
 - 数据库迁移：Flyway，禁止修改已执行脚本。
 - 缓存：Cache-Aside，写库提交后删除缓存，TTL 兜底。
 - 消息：生产端确认、消费端手动 ACK、失败重试进入死信、消费幂等。
+- 定时任务：Spring Scheduling；订单超时扫描基于数据库 `created_at`，逐单使用订单行锁和状态复核，多实例扫描不会重复释放库存。
 
 ## 7. 部署形态
 
-- 本地：Docker Compose 提供 MySQL 8、Redis 7、RabbitMQ 3.13。
+- 本地：Docker Compose 提供 MySQL 8、Redis 7、RabbitMQ 3.13；Windows 脚本启动 Java JAR 和 Vite，保留 IDEA + `npm run dev` 方式。
+- Docker 完整部署：Compose 增加后端多阶段镜像（Maven 构建 + JRE 运行）和前端多阶段镜像（Node 构建 + Nginx 静态资源）；宿主机默认前端 `8088`、后端 `8081`，Nginx 将 `/api/` 反向代理到 `backend:8080`，SPA 路由回落到 `index.html`。
 - 后端：单个 Spring Boot 可执行 JAR；开发库与测试库隔离。
-- 前端：`frontend/` 下的 Vue 3 + Vite 应用。开发时 Vite `5173` 通过 `/api` 代理到后端 `8080`；生产构建输出 `frontend/dist`，由反向代理把 `/api` 转发到后端。
+- 前端：`frontend/` 下的 Vue 3 + Vite 应用，包含用户端与管理后台（`/admin/**`）。开发时 Vite `5173` 通过 `/api` 代理到后端 `8080`；生产构建输出 `frontend/dist`，由反向代理把 `/api` 转发到后端。
 - 生产演进：可在不改业务模块边界的前提下，将 Redis/RabbitMQ 替换为托管服务；当前不设计微服务拆分。
 
 ## 8. 演进原则

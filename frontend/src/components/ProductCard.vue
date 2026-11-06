@@ -1,37 +1,51 @@
 <script setup>
+import FavoriteButton from './FavoriteButton.vue'
 import { formatPriceRange } from '../utils/format'
 
 defineProps({
-  product: { type: Object, required: true }
+  product: { type: Object, required: true },
+  favorite: { type: Boolean, default: false },
+  favoriteBusy: { type: Boolean, default: false }
 })
+defineEmits(['toggle-favorite'])
 </script>
 
 <template>
-  <RouterLink :to="`/products/${product.id}`" class="product-card">
-    <div class="product-image-wrap">
-      <img
-        v-if="product.mainImage"
-        :src="product.mainImage"
-        :alt="product.name"
-        class="product-image"
-        loading="lazy"
-      />
-      <div v-else class="product-image placeholder">暂无图片</div>
-    </div>
-    <div class="product-body">
-      <div class="product-meta">
-        <span v-if="product.categoryName" class="tag">{{ product.categoryName }}</span>
-        <span v-if="product.brandName" class="tag tag-muted">{{ product.brandName }}</span>
+  <article class="product-card">
+    <RouterLink :to="`/products/${product.id}`" class="product-link">
+      <div class="product-image-wrap">
+        <img
+          v-if="product.mainImage"
+          :src="product.mainImage"
+          :alt="product.name"
+          class="product-image"
+          loading="lazy"
+        />
+        <div v-else class="product-image placeholder">暂无图片</div>
       </div>
-      <h3 class="product-name">{{ product.name }}</h3>
-      <p class="product-subtitle">{{ product.subtitle || '精选好物，品质保障' }}</p>
-      <div class="product-price">{{ formatPriceRange(product.minPrice, product.maxPrice) }}</div>
-    </div>
-  </RouterLink>
+      <div class="product-body">
+        <div class="product-meta">
+          <span v-if="product.categoryName" class="tag">{{ product.categoryName }}</span>
+          <span v-if="product.brandName" class="tag tag-muted">{{ product.brandName }}</span>
+        </div>
+        <h3 class="product-name">{{ product.name }}</h3>
+        <p class="product-subtitle">{{ product.subtitle || '精选好物，品质保障' }}</p>
+        <div class="product-price">{{ formatPriceRange(product.minPrice, product.maxPrice) }}</div>
+      </div>
+    </RouterLink>
+    <FavoriteButton
+      class="card-favorite"
+      compact
+      :active="favorite"
+      :busy="favoriteBusy"
+      @toggle="$emit('toggle-favorite', product)"
+    />
+  </article>
 </template>
 
 <style scoped>
 .product-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -40,6 +54,20 @@ defineProps({
   overflow: hidden;
   color: inherit;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.product-link {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  color: inherit;
+}
+
+.card-favorite {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
 }
 
 .product-card:hover {

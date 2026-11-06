@@ -6,7 +6,7 @@
 
 MallAgent 是从零开发的 Java 电商后端，采用模块化单体架构，只有一个 Spring Boot 启动应用。业务设计参考 [macrozheng/mall](https://github.com/macrozheng/mall)，但不复制其代码、包结构或实现。
 
-当前范围：Java 后端 MVP（阶段 0–9）+ Vue 3 前端 MVP。前端位于 `frontend/`，已实现登录/注册、商品、购物车、结算下单、订单、模拟支付和收货地址管理。Python AI Agent 另行规划，不预埋代码。
+当前范围：Java 后端 MVP（阶段 0–9）+ Vue 3 前端 MVP。前端位于 `frontend/`，已实现登录/注册、商品公开浏览、购物车、结算下单、订单、模拟支付、发货/确认收货、整单售后与模拟退款、个人中心、商品收藏、商品评价和收货地址管理。Python AI Agent 另行规划，不预埋代码。
 
 ## 2. 技术栈（固定）
 
@@ -63,7 +63,9 @@ MallAgent 是从零开发的 Java 电商后端，采用模块化单体架构，�
 | `com.mallagent.module.payment` | 模拟支付 | 阶段 7 |
 | `com.mallagent.module.logistics` | 物流与发货 | 阶段 8 |
 | `com.mallagent.module.aftersale` | 售后与退款 | 阶段 9 |
-| `com.mallagent.module.interaction` | 点赞、收藏、评论 | 阶段 10 |
+| `com.mallagent.module.favorite` | 商品收藏 | 阶段 10 |
+| `com.mallagent.module.review` | 商品评价 | 阶段 10 |
+| `com.mallagent.module.interaction` | 点赞、评论等后续互动 | 阶段 10 预留 |
 
 依赖方向：
 
@@ -295,11 +297,23 @@ com.mallagent.<module>
 
 阶段 4 覆盖库存锁定、支付扣减、取消释放、售后退货回补、批量库存快照、库存流水，以及管理端库存查询、调整和流水查询。库存仅使用 `stock_sku`、`stock_flow` 两张表，Flyway V10/V11；公共内部契约是 `com.mallagent.module.inventory.api.InventoryStockApi`，详见 `docs/modules/inventory.md`。
 
-阶段 6/7 的 **MVP 简化版**已实现并验证（2026-11-02）：从购物车提交订单、服务端重新计价、订单/明细、库存锁定、我的订单列表/详情、取消未支付订单并释放库存；模拟支付成功、库存扣减、重复支付幂等、已取消不能支付、已支付不能取消、支付与取消并发仅一个成功。新增 Flyway V12 的 `order_info`、`order_item`、`payment_order` 三张表，详见 `docs/modules/order.md`、`docs/modules/payment.md`。全量 `mvn clean verify` 为 147 个测试，0 失败、0 错误、0 跳过。
+阶段 6/7 的 **MVP 简化版**已实现并验证（2026-11-02）：从购物车提交订单、服务端重新计价、订单/明细、库存锁定、我的订单列表/详情、取消未支付订单并释放库存；模拟支付成功、库存扣减、重复支付幂等、已取消不能支付、已支付不能取消、支付与取消并发仅一个成功。新增 Flyway V12 的 `order_info`、`order_item`、`payment_order` 三张表，详见 `docs/modules/order.md`、`docs/modules/payment.md`。
 
-Vue 3 前端 MVP 已实现于 `frontend/`：Vue Router 管理路由与登录守卫，Pinia 保存 JWT 与用户信息，Axios 统一处理统一响应、401/403 和业务错误；页面覆盖登录/注册、商品列表/详情、购物车、结算下单、订单列表/详情、模拟支付、取消订单和收货地址管理。前端通过 Vite `/api` 代理访问后端，构建和 Vitest 单测已通过。
+第一轮优化（2026-11-05）已完成：待支付订单超过 30 分钟由 `OrderTimeoutScheduler` 自动取消并释放库存；扫描基于数据库 `created_at`，逐单在订单行锁 + `READ_COMMITTED` 内重新确认状态和超时时间，支持重启恢复、重复扫描和多实例并发；支付接口在订单行锁内校验 `payDeadline`，超时返回 409 `17005`，不会扣减库存。Flyway V13 增加 `(status, created_at)` 索引。`payDeadline` 以 Asia/Shanghai 的偏移时间返回，前端跨时区解析一致；单笔超时取消失败不会影响同批其他订单。
 
-优惠券、物流、售后、互动尚未开始，下一阶段优先级待技术负责人确认。不提前实现未确认的模块。验收记录与技术债见 `docs/development-plan.md` 第 10 节。
+第二轮（2026-11-05）已完成 Vue 商品/库存管理后台：管理员登录后进入 `/admin/**`，支持商品分页/搜索/上下架、新增/编辑商品、规格与 SKU 维护、分类管理、库存查询/调整、库存流水查询。前端按 `/users/me` 权限码隐藏入口和按钮，后端 `@PreAuthorize` 仍是最终权限边界；SUPER_ADMIN 可写，OPERATOR 只读，普通用户不能访问管理接口。
+
+第三轮（2026-11-06）已完成简化履约：订单状态扩展为 `PENDING_PAYMENT → PAID → SHIPPED → COMPLETED` 并保留取消分支；管理端 `/admin/orders` 支持订单分页、状态筛选、订单号搜索、详情和发货；用户端支持待发货/待收货/已完成筛选、物流信息展示和确认收货。发货与确认收货使用订单行锁和条件更新，重复操作幂等，不修改库存。新增 Flyway V14 和 `order:info:read` / `order:info:ship` 权限。全量 `mvn clean verify` 为 158 个测试，0 失败、0 错误、0 跳过；前端 12 个 Vitest 测试通过，`npm run build` 成功。
+
+Vue 3 前端 MVP 已实现于 `frontend/`：Vue Router 管理路由与登录守卫，Pinia 保存 JWT 与用户信息，Axios 统一处理统一响应、401/403 和业务错误；页面覆盖登录/注册、商品列表/详情、购物车、结算下单、订单列表/详情、模拟支付、取消订单、确认收货和收货地址管理。前端通过 Vite `/api` 代理访问后端，构建和 Vitest 单测已通过。
+
+第四轮（2026-11-06）已完成个人中心、商品收藏与商品评价：新增 `/profile`、`/favorites`、`/reviews` 页面和商品列表/详情收藏按钮、商品详情评分汇总与评价列表、已完成订单详情评价入口。收藏和评价均按当前登录用户隔离，收藏由 `UNIQUE(user_id, spu_id)`、评价由 `UNIQUE(order_item_id)` 兜底；评价只能针对当前用户已完成订单的真实订单明细。重复发货改为相同物流信息幂等、不同物流信息返回 409。新增 Flyway V15。
+
+第五轮（2026-11-06）已完成简化售后：已完成订单可申请整单退货退款，管理员审核通过/拒绝，确认收到退货后在同一个 `REQUIRED + READ_COMMITTED` 事务内写入模拟退款记录、调用 `InventoryStockApi.restore` 回补库存并更新售后为 `COMPLETED`；拒绝不退款不回补。售后单号作为 restore 的 bizNo、原订单号作为 refBizNo；一个订单最多一个有效售后（数据库生成列唯一约束），一个订单最多一条退款记录，不同售后单不能重复回补。新增 Flyway V16 和 `aftersale:order:read/review/complete` 权限。全量 `mvn clean verify` 为 167 个测试，0 失败、0 错误、0 跳过；前端 13 个 Vitest 测试通过，`npm run build` 成功。
+
+第六轮（2026-11-06）完成运行与交付准备：新增 Windows `start-dev.ps1` / `stop-dev.ps1` 和 `start-docker.ps1` / `stop-docker.ps1`，脚本检查端口且不结束未知进程；新增后端、前端多阶段 Dockerfile、Nginx SPA 回退与 `/api/` 反向代理、Compose 后端/前端服务和健康检查；Docker 前端 `8088`、后端 `8081`，与本地 `5173/8080` 分离；商品列表、详情和评价改为公开只读，收藏、购物车等仍要求登录，未登录点击收藏引导登录。使用独立 Headless Edge + CDP 完成注册、收藏、地址、下单支付、管理端商品/库存/发货、确认收货、评价、售后、退款回补、刷新重登和越权拦截的真实浏览器端到端联调。部署说明见 `docs/deployment.md`。
+
+优惠券、真实物流轨迹、部分退款/换货、点赞/评论等后续互动尚未开始，下一阶段优先级待技术负责人确认。不提前实现未确认的模块。验收记录与技术债见 `docs/development-plan.md` 第 10 节。
 
 ### 12.1 MVP 范围
 

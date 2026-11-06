@@ -12,5 +12,8 @@ export const authApi = {
   },
   me() {
     return http.get('/users/me')
+  },
+  updateMe(payload) {
+    return http.put('/users/me', payload)
   }
 }

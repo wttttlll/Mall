@@ -65,10 +65,14 @@ class ProductPermissionIntegrationTest extends AbstractProductIntegrationTest {
     }
 
     @Test
-    void unauthenticatedProductBrowseRequiresLogin() throws Exception {
-        MvcResult result = getJson("/api/v1/products", null);
-        assertThat(result.getResponse().getStatus()).isEqualTo(401);
-        assertThat(body(result).path("code").asInt()).isEqualTo(10001);
+    void unauthenticatedProductBrowseIsPublic() throws Exception {
+        MvcResult products = getJson("/api/v1/products", null);
+        assertThat(products.getResponse().getStatus()).isEqualTo(200);
+        assertThat(body(products).path("code").asInt()).isZero();
+
+        MvcResult categories = getJson("/api/v1/products/categories/tree", null);
+        assertThat(categories.getResponse().getStatus()).isEqualTo(200);
+        assertThat(body(categories).path("code").asInt()).isZero();
     }
 
     private Map<String, Object> categoryRequest(String name) {

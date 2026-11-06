@@ -61,11 +61,14 @@ public class PaymentService {
         if (!ORDER_PENDING_PAYMENT.equals(order.status())) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_STATUS_CONFLICT);
         }
+        LocalDateTime paidAt = LocalDateTime.now();
+        if (order.payDeadline() != null && !paidAt.isBefore(order.payDeadline())) {
+            // 即使定时任务尚未扫描到，也拒绝已超过支付截止时间的订单。
+            throw new BusinessException(PaymentErrorCode.PAYMENT_EXPIRED);
+        }
         if (order.items().isEmpty()) {
             throw new BusinessException(PaymentErrorCode.PAYMENT_RECORD_CONFLICT);
         }
-
-        LocalDateTime paidAt = LocalDateTime.now();
 
         // 支付扣减库存与订单状态变更在同一事务；失败全部回滚。
         inventoryStockApi.deduct(new StockCommand(order.orderNo(), order.items().stream()

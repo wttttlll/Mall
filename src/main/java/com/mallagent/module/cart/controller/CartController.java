@@ -44,6 +44,8 @@ public class CartController {
             @ApiResponse(responseCode = "404", description = "SKU 不存在"),
             @ApiResponse(responseCode = "409", description = "商品不可购买、数量超限或幂等键冲突")
     })
+
+    //增
     @PostMapping("/items")
     public Result<CartResponse> add(
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
@@ -53,6 +55,7 @@ public class CartController {
         return Result.success(cartService.getCart(userId));
     }
 
+    //改
     @Operation(summary = "修改购买数量", description = "数量为绝对值，范围 1-99")
     @ApiResponses({
             @ApiResponse(responseCode = "400", description = "数量不合法"),
@@ -66,6 +69,7 @@ public class CartController {
         return Result.success(cartService.getCart(userId));
     }
 
+    //删
     @Operation(summary = "删除购物车条目", description = "条目不存在时视为成功")
     @DeleteMapping("/items/{skuId}")
     public Result<CartResponse> delete(@PathVariable Long skuId) {
@@ -73,6 +77,7 @@ public class CartController {
         cartService.deleteItem(userId, skuId);
         return Result.success(cartService.getCart(userId));
     }
+
 
     @Operation(summary = "勾选或取消勾选单个条目")
     @ApiResponses({
@@ -94,6 +99,7 @@ public class CartController {
         return Result.success(cartService.getCart(userId));
     }
 
+    //查
     @Operation(summary = "查询购物车",
             description = "价格与可购买状态来自商品模块当前数据；不可购买条目保留并标记")
     @GetMapping

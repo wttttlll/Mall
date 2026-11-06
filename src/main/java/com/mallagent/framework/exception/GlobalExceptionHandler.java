@@ -147,10 +147,18 @@ public class GlobalExceptionHandler {
             case 16002, 16006 -> HttpStatus.NOT_FOUND;
             case 16003, 16004, 16005, 16008 -> HttpStatus.CONFLICT;
             case 16001, 16007 -> HttpStatus.BAD_REQUEST;
-            // 模拟支付
+            // 模拟支付与退款
             case 17003 -> HttpStatus.NOT_FOUND;
-            case 17001, 17002 -> HttpStatus.CONFLICT;
+            case 17001, 17002, 17005, 17006, 17007, 17008 -> HttpStatus.CONFLICT;
             case 17004 -> HttpStatus.BAD_REQUEST;
+            // 收藏与评价
+            case 20001, 20004 -> HttpStatus.BAD_REQUEST;
+            case 20002, 20003 -> HttpStatus.CONFLICT;
+            case 20005 -> HttpStatus.NOT_FOUND;
+            // 售后
+            case 19002 -> HttpStatus.NOT_FOUND;
+            case 19001, 19003, 19004 -> HttpStatus.CONFLICT;
+            case 19005 -> HttpStatus.BAD_REQUEST;
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }

@@ -22,4 +22,14 @@ public interface OrderItemMapper extends BaseMapper<OrderItem> {
             ORDER BY sku_id ASC
             """)
     List<OrderItem> selectByOrderId(@Param("orderId") Long orderId);
+
+    @Select("""
+            SELECT id, order_id, sku_id, spu_id, sku_code, spu_name, image_url,
+                   spec_text, unit_price, quantity, line_amount, created_at
+            FROM order_item
+            WHERE order_id = #{orderId} AND sku_id = #{skuId}
+            LIMIT 1
+            """)
+    OrderItem selectByOrderIdAndSkuId(@Param("orderId") Long orderId,
+                                      @Param("skuId") Long skuId);
 }

@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ErrorBanner from '../components/ErrorBanner.vue'
 import { useAuthStore } from '../stores/auth'
+import { adminHomePath } from '../utils/permissions'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -14,7 +15,8 @@ const error = ref('')
 
 function safeRedirect() {
   const target = typeof route.query.redirect === 'string' ? route.query.redirect : ''
-  return target.startsWith('/') ? target : '/products'
+  if (target.startsWith('/')) return target
+  return auth.canAccessAdmin ? adminHomePath(auth.permissions) : '/products'
 }
 
 async function submit() {

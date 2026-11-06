@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { authApi } from '../api/auth'
 import { clearTokens, getAccessToken, getRefreshToken, saveTokens } from '../utils/authStorage'
+import { canAccessAdmin, hasPermission } from '../utils/permissions'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
@@ -11,7 +12,11 @@ export const useAuthStore = defineStore('auth', {
   }),
   getters: {
     isAuthenticated: (state) => Boolean(state.accessToken),
-    displayName: (state) => state.user?.nickname || state.user?.username || ''
+    displayName: (state) => state.user?.nickname || state.user?.username || '',
+    permissions: (state) => state.user?.permissions || [],
+    roles: (state) => state.user?.roles || [],
+    canAccessAdmin: (state) => canAccessAdmin(state.user?.permissions),
+    hasPermission: (state) => (code) => hasPermission(state.user?.permissions, code)
   },
   actions: {
     async initialize() {
@@ -37,6 +42,10 @@ export const useAuthStore = defineStore('auth', {
     },
     async fetchMe() {
       this.user = await authApi.me()
+      return this.user
+    },
+    async updateProfile(payload) {
+      this.user = await authApi.updateMe(payload)
       return this.user
     },
     async logout() {

@@ -90,6 +90,14 @@ mallagent:
     # 购物车状态直接查询 MySQL，不缓存
     max-quantity-per-item: 99
     max-items: 100
+  order:
+    # 待支付订单超过该时间自动取消并释放库存
+    timeout-minutes: 30
+    # 定时扫描间隔（毫秒）；应用重启后从数据库恢复扫描
+    timeout-scan-interval-ms: 60000
+    timeout-scan-initial-delay-ms: 10000
+    # 单次扫描最多处理的订单数
+    timeout-batch-size: 100
 
 logging:
   level:

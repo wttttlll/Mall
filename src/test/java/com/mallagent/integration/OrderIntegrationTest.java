@@ -34,6 +34,7 @@ class OrderIntegrationTest extends AbstractOrderIntegrationTest {
         assertThat(data.path("status").asText()).isEqualTo("PENDING_PAYMENT");
         assertThat(data.path("totalAmount").decimalValue()).isEqualByComparingTo("177.60");
         assertThat(data.path("itemCount").asInt()).isEqualTo(1);
+        assertThat(data.path("payDeadline").asText()).endsWith("+08:00");
         JsonNode item = data.path("items").get(0);
         assertThat(item.path("skuId").asLong()).isEqualTo(product.skuId());
         assertThat(item.path("unitPrice").decimalValue()).isEqualByComparingTo("88.80");
