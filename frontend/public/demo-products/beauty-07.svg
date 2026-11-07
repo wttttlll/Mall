@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b1f2b"/><stop offset=".58" stop-color="#be486d"/><stop offset="1" stop-color="#f9c5d8"/></linearGradient>
+    <radialGradient id="r" cx=".8" cy=".12" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="800" height="800" fill="url(#g)"/>
+  <rect width="800" height="800" fill="url(#r)"/>
+  <circle cx="690" cy="180" r="210" fill="none" stroke="#fff" stroke-opacity=".13" stroke-width="2"/>
+  <circle cx="710" cy="165" r="135" fill="none" stroke="#fff" stroke-opacity=".12" stroke-width="2"/>
+  <rect x="52" y="52" width="696" height="696" rx="42" fill="none" stroke="#fff" stroke-opacity=".14"/>
+  <circle cx="620" cy="520" r="128" fill="#fff" fill-opacity=".07"/>
+  <circle cx="620" cy="520" r="82" fill="#fff" fill-opacity=".06"/>
+  <path d="M370 240h70v55l35 42v175H335V337l35-42z" fill="none" stroke="#f9c5d8" stroke-width="9" stroke-linejoin="round" opacity=".9"/>
+      <path d="M355 375h100M355 410h100" stroke="#f9c5d8" stroke-width="8" opacity=".55"/>
+      <circle cx="520" cy="300" r="22" fill="#f9c5d8" opacity=".35"/>
+  <text x="64" y="585" fill="#fff" fill-opacity=".78" font-size="18" font-family="Arial, sans-serif" letter-spacing="4">BEAUTY CARE</text>
+  <text x="64" y="648" fill="#ffffff" font-size="36" font-weight="700" font-family="Microsoft YaHei, PingFang SC, sans-serif">轻透防晒乳 SPF</text><text x="64" y="692" fill="#ffffff" font-size="36" font-weight="700" font-family="Microsoft YaHei, PingFang SC, sans-serif">50</text>
+  <text x="64" y="744" fill="#fff" fill-opacity=".55" font-size="16" font-family="Arial, sans-serif" letter-spacing="2">MALLAGENT · SELECT</text>
+  <text x="724" y="744" text-anchor="end" fill="#fff" fill-opacity=".45" font-size="15" font-family="Arial, sans-serif">DEMO-BEAUTY-007</text>
+</svg>
