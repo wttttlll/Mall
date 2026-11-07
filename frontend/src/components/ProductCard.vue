@@ -1,13 +1,22 @@
 <script setup>
+import { ref, watch } from 'vue'
 import FavoriteButton from './FavoriteButton.vue'
 import { formatPriceRange } from '../utils/format'
 
-defineProps({
+const props = defineProps({
   product: { type: Object, required: true },
   favorite: { type: Boolean, default: false },
   favoriteBusy: { type: Boolean, default: false }
 })
 defineEmits(['toggle-favorite'])
+
+const imageFailed = ref(false)
+watch(
+  () => props.product?.mainImage,
+  () => {
+    imageFailed.value = false
+  }
+)
 </script>
 
 <template>
@@ -15,13 +24,15 @@ defineEmits(['toggle-favorite'])
     <RouterLink :to="`/products/${product.id}`" class="product-link">
       <div class="product-image-wrap">
         <img
-          v-if="product.mainImage"
+          v-if="product.mainImage && !imageFailed"
           :src="product.mainImage"
           :alt="product.name"
           class="product-image"
-          loading="lazy"
+          @error="imageFailed = true"
         />
-        <div v-else class="product-image placeholder">暂无图片</div>
+        <div v-else class="product-image placeholder">
+          <span>{{ imageFailed ? '图片暂不可用' : '暂无图片' }}</span>
+        </div>
       </div>
       <div class="product-body">
         <div class="product-meta">
@@ -77,7 +88,7 @@ defineEmits(['toggle-favorite'])
 }
 
 .product-image-wrap {
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1 / 1;
   background: var(--surface-muted);
   overflow: hidden;
 }
@@ -98,7 +109,10 @@ defineEmits(['toggle-favorite'])
   display: grid;
   place-items: center;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: 12px;
+  background:
+    linear-gradient(135deg, rgba(219, 234, 254, 0.42), transparent 60%),
+    var(--surface-muted);
 }
 
 .product-body {
@@ -154,8 +168,9 @@ defineEmits(['toggle-favorite'])
 
 .product-price {
   margin-top: auto;
-  color: var(--price);
+  color: #b4233a;
   font-weight: 800;
-  font-size: 17px;
+  font-size: 18px;
+  letter-spacing: -0.02em;
 }
 </style>

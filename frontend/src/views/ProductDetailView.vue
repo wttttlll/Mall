@@ -23,7 +23,9 @@ const error = ref('')
 const selectedSkuId = ref(null)
 const quantity = ref(1)
 const adding = ref(false)
+const buying = ref(false)
 const notice = ref('')
+const imageFailed = ref(false)
 const favorite = ref(false)
 const favoriteBusy = ref(false)
 const favoriteError = ref('')
@@ -49,6 +51,9 @@ const priceRange = computed(() => {
   return min === max ? formatMoney(min) : `${formatMoney(min)} - ${formatMoney(max)}`
 })
 const displayImage = computed(() => selectedSku.value?.imageUrl || product.value?.mainImage || '')
+watch(displayImage, () => {
+  imageFailed.value = false
+})
 
 async function loadProduct() {
   loading.value = true
@@ -164,6 +169,28 @@ async function addToCart() {
   }
 }
 
+async function buyNow() {
+  if (!selectedSku.value || buying.value || adding.value) return
+  if (!auth.isAuthenticated) {
+    router.push({ name: 'login', query: { redirect: route.fullPath } })
+    return
+  }
+  buying.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    await cartApi.add(selectedSku.value.id, quantity.value, createIdempotencyKey('cart'))
+    // 立即购买只结算当前 SKU：清空其他勾选，再勾选当前商品。
+    await cartApi.selectAll(false)
+    await cartApi.setSelected(selectedSku.value.id, true)
+    await router.push('/checkout')
+  } catch (err) {
+    error.value = err.message || '立即购买失败'
+  } finally {
+    buying.value = false
+  }
+}
+
 onMounted(loadProduct)
 watch(() => route.params.id, (next, previous) => {
   if (next && next !== previous) loadProduct()
@@ -181,8 +208,16 @@ watch(() => route.params.id, (next, previous) => {
       <div class="detail-layout">
         <div class="detail-media">
           <div class="detail-image-wrap">
-            <img v-if="displayImage" :src="displayImage" :alt="product.name" class="detail-image" />
-            <div v-else class="detail-image placeholder">暂无图片</div>
+            <img
+              v-if="displayImage && !imageFailed"
+              :src="displayImage"
+              :alt="product.name"
+              class="detail-image"
+              @error="imageFailed = true"
+            />
+            <div v-else class="detail-image placeholder">
+              {{ imageFailed ? '图片暂不可用' : '暂无图片' }}
+            </div>
           </div>
           <div v-if="product.images?.length > 1" class="thumb-row">
             <img
@@ -218,6 +253,9 @@ watch(() => route.params.id, (next, previous) => {
             </strong>
             <span v-if="selectedSku?.marketPrice" class="market-price">
               {{ formatMoney(selectedSku.marketPrice) }}
+            </span>
+            <span class="stock-badge" :class="{ 'stock-empty': !selectedSku }">
+              {{ selectedSku ? '现货' : '暂时缺货' }}
             </span>
           </div>
 
@@ -256,14 +294,25 @@ watch(() => route.params.id, (next, previous) => {
           </div>
           <div v-if="favoriteNotice" class="success-banner">{{ favoriteNotice }}</div>
 
-          <button
-            class="btn btn-primary btn-lg btn-block"
-            type="button"
-            :disabled="!selectedSku || adding"
-            @click="addToCart"
-          >
-            {{ adding ? '加入中...' : '加入购物车' }}
-          </button>
+          <div class="purchase-actions">
+            <button
+              class="btn btn-primary btn-lg"
+              type="button"
+              :disabled="!selectedSku || buying || adding"
+              @click="buyNow"
+            >
+              {{ buying ? '正在前往结算...' : '立即购买' }}
+            </button>
+            <button
+              class="btn btn-ghost btn-lg"
+              type="button"
+              :disabled="!selectedSku || adding || buying"
+              @click="addToCart"
+            >
+              {{ adding ? '加入中...' : '加入购物车' }}
+            </button>
+          </div>
+          <p class="purchase-note">支持模拟支付与整单售后 · 演示环境不产生真实交易</p>
 
           <div class="detail-description">
             <h2>商品详情</h2>
@@ -427,6 +476,37 @@ watch(() => route.params.id, (next, previous) => {
   color: var(--text-soft);
   text-decoration: line-through;
   font-size: 14px;
+}
+
+.stock-badge {
+  margin-left: auto;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.stock-badge.stock-empty {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #be123c;
+}
+
+.purchase-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.purchase-note {
+  margin: 10px 0 0;
+  color: var(--text-soft);
+  font-size: 11px;
+  text-align: center;
 }
 
 .option-block {
@@ -605,6 +685,18 @@ watch(() => route.params.id, (next, previous) => {
 
   .review-summary {
     align-items: flex-start;
+  }
+
+  .purchase-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .price-panel {
+    flex-wrap: wrap;
+  }
+
+  .stock-badge {
+    margin-left: 0;
   }
 }
 </style>

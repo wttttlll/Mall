@@ -2,7 +2,7 @@
 
 MallAgent 是一个从零开发的 MVP 电商项目：Java 后端采用**模块化单体**架构（一个 Spring Boot 进程、一个启动类、一个 MySQL 库），前端使用 **Vue 3 + Vite**。后端当前为**单 Maven 模块**，根目录即启动工程；前端位于 `frontend/`。
 
-当前进度：阶段 0–4 已通过验收；阶段 6/7 的 MVP 简化版（订单、模拟支付）已实现；Vue 用户端和商品/订单/售后/库存管理后台已实现；已完成订单 30 分钟超时自动取消、支付倒计时、简化发货与确认收货、个人中心、商品收藏、商品评价，以及整单售后申请、管理员审核、模拟退款与库存回补。已完成 Windows 一键启停、Docker 前后端多阶段构建、Nginx 反向代理和真实浏览器端到端联调。后端全量测试 167 个，0 失败、0 错误、0 跳过；前端 13 个 Vitest 测试通过。优惠券、复杂物流和部分售后未开始。
+当前进度：阶段 0–4 已通过验收；阶段 6/7 的 MVP 简化版（订单、模拟支付）已实现；Vue 用户端和商品/订单/售后/库存管理后台已实现；已完成订单 30 分钟超时自动取消、支付倒计时、简化发货与确认收货、个人中心、商品收藏、商品评价，以及整单售后申请、管理员审核、模拟退款与库存回补。已完成 Windows 一键启停、Docker 前后端多阶段构建、Nginx 反向代理和真实浏览器端到端联调。首页已升级为包含 Hero、六大分类、精选、新品和全部商品的现代商城展示，并内置 60 件可重复初始化的演示商品与自有 SVG 主图。后端全量测试 167 个，0 失败、0 错误、0 跳过；前端 13 个 Vitest 测试通过。优惠券、复杂物流和部分售后未开始。
 
 > 交付定位：本项目达到**本地演示版 / 学习项目正式交付标准**，不是生产就绪系统。生产部署前必须替换演示密码和示例密钥、关闭不必要的 Swagger、配置 HTTPS、备份和监控。
 
@@ -56,11 +56,14 @@ MallAgent/
 ├── Dockerfile                  # 后端多阶段镜像
 ├── docker-compose.yml          # MySQL、Redis、RabbitMQ、后端、前端
 ├── docker/mysql/init/
-├── scripts/                    # Windows PowerShell 一键启停
+├── scripts/                    # Windows PowerShell 一键启停与演示数据
 │   ├── start-dev.ps1 / stop-dev.ps1
-│   └── start-docker.ps1 / stop-docker.ps1
+│   ├── start-docker.ps1 / stop-docker.ps1
+│   ├── load-demo-data.ps1
+│   └── demo-data.sql
 ├── frontend/                   # Vue 3 + Vite 前端
 │   ├── Dockerfile / nginx.conf # 前端多阶段镜像与反向代理
+│   ├── public/demo-products/   # 60 张项目自有 SVG 演示主图
 │   ├── src/api/                # Axios 封装与后端 API
 │   ├── src/components/         # 通用组件
 │   ├── src/views/              # 登录、商品、购物车、结算、订单、售后、地址、个人中心、收藏、评价
@@ -143,7 +146,8 @@ Docker Hub 不可达时，在 `.env` 中把 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_
 前端页面：
 
 - 登录、注册
-- 商品列表、商品详情、SKU 选择、加入购物车
+- 商城首页：Hero Banner、六大分类、精选好物、新品推荐、全部商品与完整页脚
+- 商品列表、商品详情、SKU 选择、立即购买、收藏、加入购物车
 - 购物车：修改数量、删除、勾选、全选
 - 结算：选择收货地址、查看后端计算的商品与金额、提交订单
 - 我的订单（待支付、待发货、待收货、已完成、已取消）、订单详情
@@ -156,6 +160,25 @@ Docker Hub 不可达时，在 `.env` 中把 `MAVEN_IMAGE`、`JRE_IMAGE`、`NODE_
 - 管理后台：商品分页/搜索/上下架、新增/编辑商品、规格与 SKU 维护、分类管理、订单查询/详情/发货、售后查询/详情/审核/确认退货退款、库存查询/调整、库存流水查询
 
 管理后台入口：使用具有商品、订单、售后或库存权限的账号（SUPER_ADMIN / OPERATOR）登录后，页面顶部出现“管理后台”，或直接访问 `http://localhost:5173/admin/products`。SUPER_ADMIN 可执行有权限的写操作；OPERATOR 为只读；普通用户访问后台会被重定向，所有接口最终仍由后端 `@PreAuthorize` 校验。
+
+## 演示商品数据
+
+项目自带 6 个分类、60 件商城演示商品和 60 张本地 SVG 演示主图。初始化脚本不进入 Flyway，生产环境不会自动执行。
+
+```powershell
+# 默认写入运行中的 mallagent-mysql 容器
+powershell -ExecutionPolicy Bypass -File .\scripts\load-demo-data.ps1
+
+# 使用本机 mysql 客户端，连接 .env 中的 MYSQL_HOST/MYSQL_PORT
+powershell -ExecutionPolicy Bypass -File .\scripts\load-demo-data.ps1 -Local
+```
+
+- SQL：[`scripts/demo-data.sql`](scripts/demo-data.sql)
+- 商品图片：[`frontend/public/demo-products/`](frontend/public/demo-products/)
+- 固定 SKU 码作为幂等锚点；重复执行不会重复创建商品，也不会重复增加库存。
+- 初始库存同时写入 `stock_sku` 和 `ADMIN_ADJUST` 库存流水，保持库存与流水一致。
+- 脚本会清理商品分类树 Redis 缓存，执行后首页分类立即生效。
+- 已有浏览器测试商品已下架但未删除，历史订单/评价/收藏仍保留。
 
 ## 配置项
 
