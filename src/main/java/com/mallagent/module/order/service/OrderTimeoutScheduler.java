@@ -19,7 +19,8 @@ import java.util.List;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class OrderTimeoutScheduler {
+public class
+OrderTimeoutScheduler {
 
     private final OrderInfoMapper orderInfoMapper;
     private final OrderService orderService;
