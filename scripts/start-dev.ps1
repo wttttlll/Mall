@@ -103,6 +103,12 @@ if (-not $SkipDependencies -and -not $backendOwner) {
 }
 
 if (-not $backendOwner) {
+    $managementPort = Get-EnvValue $envValues 'MANAGEMENT_PORT' '8081'
+    $managementOwner = Get-PortOwner ([int]$managementPort)
+    if ($managementOwner -and -not (Test-MallAgentOwner $managementOwner)) {
+        throw "端口 $managementPort 被其他程序占用：$($managementOwner.Name) (PID $($managementOwner.ProcessId))。请在 .env 中修改 MANAGEMENT_PORT。脚本不会结束该进程。"
+    }
+
     $env:MYSQL_HOST = 'localhost'
     $env:MYSQL_PORT = Get-EnvValue $envValues 'MYSQL_PORT' '3307'
     $env:MYSQL_DATABASE = Get-EnvValue $envValues 'MYSQL_DATABASE' 'mallagent'
@@ -116,6 +122,7 @@ if (-not $backendOwner) {
     $env:RABBITMQ_PASSWORD = Get-EnvValue $envValues 'RABBITMQ_PASSWORD' 'mallagent'
     $env:JWT_SECRET = Get-EnvValue $envValues 'JWT_SECRET' 'mallagent-local-dev-secret-change-me-0123456789abcdef'
     $env:ADMIN_INIT_PASSWORD = Get-EnvValue $envValues 'ADMIN_INIT_PASSWORD' 'Admin@123456'
+    $env:MANAGEMENT_PORT = $managementPort
 
     Write-Host "正在构建后端..." -ForegroundColor Cyan
     Push-Location $Root

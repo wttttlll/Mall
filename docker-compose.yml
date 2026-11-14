@@ -72,6 +72,9 @@ services:
         JRE_IMAGE: ${JRE_IMAGE:-eclipse-temurin:21-jre-jammy}
     container_name: mallagent-backend
     restart: unless-stopped
+    # 与 Kubernetes terminationGracePeriodSeconds 对齐：SIGTERM 后最多等待 45s，
+    # 覆盖 Spring Boot 30s 的优雅停机窗口，避免 Compose 默认 10s 提前 SIGKILL。
+    stop_grace_period: 45s
     environment:
       MYSQL_HOST: mysql
       MYSQL_PORT: 3306
@@ -90,10 +93,13 @@ services:
       # 本地演示默认开启文档；生产/局域网部署建议设为 false。
       SPRINGDOC_API_DOCS_ENABLED: ${SPRINGDOC_API_DOCS_ENABLED:-true}
       SPRINGDOC_SWAGGER_UI_ENABLED: ${SPRINGDOC_SWAGGER_UI_ENABLED:-true}
+      MANAGEMENT_PORT: 8081
       TZ: Asia/Shanghai
     ports:
       # Docker 模式下默认使用 8081，避免与 Windows 本地 8080 后端冲突
       - "127.0.0.1:${DOCKER_BACKEND_PORT:-8081}:8080"
+      # 管理端口只绑定本机，供探针/指标测试，不进入前端反向代理
+      - "127.0.0.1:${DOCKER_MANAGEMENT_PORT:-8082}:8081"
     depends_on:
       mysql:
         condition: service_healthy
@@ -102,7 +108,8 @@ services:
       rabbitmq:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/v1/system/health"]
+      # 与 Kubernetes readiness 保持一致；RabbitMQ 不作为就绪必需依赖
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/actuator/health/readiness"]
       interval: 10s
       timeout: 5s
       retries: 20

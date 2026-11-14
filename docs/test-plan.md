@@ -1,7 +1,7 @@
 # MallAgent 测试计划
 
 > 适用范围：阶段 0–9。本文登记测试分层、关键用例与执行方式；每阶段新增并发、幂等或重复请求用例必须同步更新。
-> 最后更新：2026-11-05（订单超时优化 + Vue 管理后台）。
+> 最后更新：2026-11-14（Phase 3 Kubernetes 双副本验收）。
 
 ## 1. 测试分层
 
@@ -326,3 +326,24 @@ mvn clean verify
   - 商品详情：立即购买、加入购物车、收藏、现货状态、评价区域正常；Docker 前端镜像已重建并包含演示 SVG。
   - 前端：4 个测试文件、13 个 Vitest 测试通过；`npm run build` 成功。
   - 后端：`mvn clean verify`，167 个测试，0 失败、0 错误、0 跳过。
+
+## 10. Kubernetes 验收（Phase 3，2026-11-14）
+
+环境：Docker Desktop Kubernetes v1.36.1，单节点；Namespace `mallagent`；后端/前端各 2 副本；MySQL/Redis/RabbitMQ 单副本 + PVC。
+
+执行结果：
+
+- `mvn clean verify`：168 个测试，0 失败、0 错误、0 跳过；新增 Refresh Token 并发轮换测试。
+- `kubectl apply --dry-run=client -f k8s/` 通过。
+- Flyway Job：`mallagent` 库 16 条成功迁移；全新库 `mallagent_migration_test` 从空库执行 V1–V16，`executed=16`，随后清理测试库。
+- 管理员引导：单副本 bootstrap 创建 admin；最终 2 副本 `ADMIN_INIT_ENABLED=false`；`sys_user` 中 admin 恰好 1 条。
+- 双副本：`kubectl get pods` 2/2 Ready；`endpoints/backend` 2 个 IP；PDB `ALLOWED DISRUPTIONS=1`。
+- 跨 Pod JWT：pod1 登录后 pod2 访问 200；pod2 登出后 pod1 旧 token 401；pod1 登录后 pod2 refresh 200；同一 Refresh Token 并发刷新 pod1=200、pod2=401。
+- 故障：MySQL 停止时 readiness 503、legacy health 503、liveness 200，恢复后 200；Redis 同样；RabbitMQ 停止时 readiness 200、liveness 200、legacy 503，恢复后 legacy 200；后端 Pod 未重启。
+- 滚动更新：240 个连续请求全部 200；`maxUnavailable=0`，滚动后 2/2 Ready。
+- 优雅停机：MySQL 行锁挂起在途请求后删除 Pod；请求 200、耗时约 13s；日志出现 `Commencing graceful shutdown` 和 `Graceful shutdown complete`。
+- 持久化：MySQL `sys_config` 标记和 Redis AOF 标记在 Pod 重建后仍存在；PVC Bound。
+- 安全：K8s 中 Swagger 404；管理端口无 NodePort/LoadBalancer；`/actuator/env` 无认证 401、管理员 token 404；Secret 由 `.env.k8s` 创建且被 gitignore，仓库中无真实值。
+- Compose 回归：`docker compose up -d --force-recreate backend frontend --wait` 全部 healthy；商城/管理 API、Swagger、管理探针 200；Windows 脚本语法通过。
+- 前端 `npm run build` 成功。
+- 已知限制：Docker Desktop 未把 NodePort 映射到宿主机，前端使用 `kubectl port-forward -n mallagent svc/frontend 30088:80`；单节点无法验证节点级 HA；依赖组件单副本。

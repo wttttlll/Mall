@@ -130,6 +130,7 @@ docker compose up -d --build --wait
 - 管理后台：`http://127.0.0.1:8088/admin/products`
 - 后端（仅用于调试）：`http://127.0.0.1:8081/api/v1/system/health`
 - Swagger：`http://127.0.0.1:8081/swagger-ui.html`
+- 管理端口（仅本机）：`http://127.0.0.1:8082/actuator/health/readiness`
 - 前端 Nginx 将 `/api/` 反向代理到 Compose 内部后端 `backend:8080`。
 - MySQL 数据使用 `mallagent-mysql-data` 持久化卷；不要执行 `docker compose down -v`。
 
@@ -187,6 +188,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\load-demo-data.ps1 -Local
 | 环境变量 | 说明 |
 | --- | --- |
 | `SERVER_PORT` | 应用端口，默认 8080 |
+| `MANAGEMENT_PORT` | Actuator 管理端口，默认 8081；不通过前端 Nginx 暴露 |
 | `MYSQL_HOST` / `MYSQL_PORT` | MySQL 地址与端口 |
 | `MYSQL_DATABASE` | 数据库名 |
 | `MYSQL_USER` / `MYSQL_PASSWORD` | 数据库账号 |
@@ -195,6 +197,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\load-demo-data.ps1 -Local
 | `JWT_SECRET` | JWT 签名密钥；生产必须使用足够长的随机值 |
 | `ADMIN_INIT_PASSWORD` | 首次启动的管理员初始密码；已有 admin 不会重置 |
 | `DOCKER_BACKEND_PORT` | Docker 后端映射端口，默认 8081，避免与本地 8080 冲突 |
+| `DOCKER_MANAGEMENT_PORT` | Docker 管理端口映射，默认 8082，仅绑定 `127.0.0.1` |
 | `FRONTEND_PORT` | Docker 前端映射端口，默认 8088，避免与本地 5173 冲突 |
 | `MAVEN_IMAGE` / `JRE_IMAGE` | 后端多阶段构建镜像，可替换为镜像站地址 |
 | `NODE_IMAGE` / `NGINX_IMAGE` | 前端多阶段构建镜像，可替换为镜像站地址 |
@@ -204,6 +207,50 @@ powershell -ExecutionPolicy Bypass -File .\scripts\load-demo-data.ps1 -Local
 订单超时配置位于 `application.yml` 的 `mallagent.order`：`timeout-minutes`（默认 30）、`timeout-scan-interval-ms`（默认 60000）和 `timeout-batch-size`（默认 100）。
 
 其余默认值见 `src/main/resources/application.yml`；不要在生产环境使用本地开发默认值。
+
+### 健康探针与管理端口
+
+后端启用了 Spring Boot Actuator，业务端口与管理端口分离：
+
+```text
+业务端口：8080
+管理端口：8081（应用进程内；Docker 只映射到宿主机 127.0.0.1:8082）
+```
+
+可用端点：
+
+```text
+GET /actuator/health
+GET /actuator/health/liveness
+GET /actuator/health/readiness
+GET /actuator/info
+GET /actuator/prometheus
+```
+
+探针语义：
+
+- liveness：只检查应用自身，不依赖 MySQL、Redis、RabbitMQ。
+- readiness：检查 readinessState、MySQL、Redis；RabbitMQ 不是当前核心链路必需依赖。
+- 原有 `GET /api/v1/system/health` 保留，仍会检查 MySQL、Redis、RabbitMQ。
+
+优雅停机：`server.shutdown=graceful`，单个停机阶段最长等待 30s；Compose 设置 `stop_grace_period: 45s`，与后续 Kubernetes `terminationGracePeriodSeconds` 对齐，避免默认 10s 提前 SIGKILL。容器内 `exec java` 保证 Java 进程直接接收 SIGTERM。
+
+管理端口只在容器内部/宿主机回环地址监听，不通过前端 Nginx 反向代理。生产或 Kubernetes 中应只通过集群内部 Service 暴露给探针和 Prometheus。
+
+### Kubernetes 部署（Phase 3）
+
+前置条件：Docker Desktop 已启用 Kubernetes，`kubectl get nodes` 为 Ready。
+
+```powershell
+# 构建镜像、创建 K8s Secret、执行 Flyway Job、管理员引导、部署双副本并导入演示数据
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-k8s.ps1
+```
+
+- 商城前端：`http://localhost:30088`（支持 NodePort 的集群）；Docker Desktop 默认不映射 NodePort，请使用 `kubectl port-forward -n mallagent svc/frontend 30088:80`
+- 管理探针：`kubectl port-forward -n mallagent svc/backend-management 18081:8081`
+- K8s 使用独立 PVC/数据库，不触碰 Docker Compose 数据卷；测试期间可 `docker compose stop`（不要加 `-v`）。
+- Secret 由 `scripts/create-k8s-secret.ps1` 从被 `.gitignore` 忽略的 `.env.k8s` 创建，真实密码/JWT 密钥不进入 Git。
+- 完整资源、探针、故障测试和清理说明见 [`docs/kubernetes.md`](docs/kubernetes.md)。
 
 ### 安全提示
 

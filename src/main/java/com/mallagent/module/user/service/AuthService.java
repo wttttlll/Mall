@@ -141,13 +141,12 @@ public class AuthService {
         }
 
         String jti = claims.getId();
-        String storedUserId = redisTemplate.opsForValue().get(REFRESH_KEY_PREFIX + jti);
+        // 轮换：旧 Refresh Token 只能使用一次。GETDEL 原子读取并删除，
+        // 避免多实例/并发请求同时通过 GET 校验后重复换发新 Token。
+        String storedUserId = redisTemplate.opsForValue().getAndDelete(REFRESH_KEY_PREFIX + jti);
         if (storedUserId == null || !storedUserId.equals(String.valueOf(userId))) {
             throw new BusinessException(UserErrorCode.INVALID_REFRESH_TOKEN);
         }
-
-        // 轮换：旧 Refresh Token 只能使用一次
-        redisTemplate.delete(REFRESH_KEY_PREFIX + jti);
 
         SysUser user = userMapper.selectById(userId);
         if (user == null || user.getStatus() == null || user.getStatus() != 1) {

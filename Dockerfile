@@ -24,9 +24,12 @@ COPY --from=build /workspace/target/mallagent-*.jar /app/app.jar
 RUN chown -R mallagent:mallagent /app
 
 USER mallagent
-EXPOSE 8080
+EXPOSE 8080 8081
+
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=70.0 -XX:InitialRAMPercentage=20.0 -XX:+ExitOnOutOfMemoryError"
+STOPSIGNAL SIGTERM
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=10 \
-    CMD curl -fsS http://127.0.0.1:8080/api/v1/system/health || exit 1
+    CMD curl -fsS http://127.0.0.1:8081/actuator/health/readiness || exit 1
 
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

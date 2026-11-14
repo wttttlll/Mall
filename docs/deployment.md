@@ -114,6 +114,7 @@ RABBITMQ_PASSWORD=...
 JWT_SECRET=至少32字节的随机值
 ADMIN_INIT_PASSWORD=...
 DOCKER_BACKEND_PORT=8081
+DOCKER_MANAGEMENT_PORT=8082
 FRONTEND_PORT=8088
 ```
 
@@ -142,9 +143,46 @@ docker compose up -d --build --wait
 - 商城：`http://127.0.0.1:8088`
 - 管理后台：`http://127.0.0.1:8088/admin/products`
 - 后端健康检查：`http://127.0.0.1:8081/api/v1/system/health`
+- 管理端口探针：`http://127.0.0.1:8082/actuator/health/liveness`
+- 管理端口 readiness：`http://127.0.0.1:8082/actuator/health/readiness`
+- Prometheus 指标：`http://127.0.0.1:8082/actuator/prometheus`
 - Swagger：`http://127.0.0.1:8081/swagger-ui.html`
 
-所有 Compose 发布端口默认只绑定 `127.0.0.1`，避免数据库、Redis、RabbitMQ 管理页和后端 Swagger 暴露到局域网。需要局域网访问时，明确修改 `docker-compose.yml` 的端口绑定，并同时收紧防火墙和密码策略。
+所有 Compose 发布端口默认只绑定 `127.0.0.1`，避免数据库、Redis、RabbitMQ 管理页、Actuator 和后端 Swagger 暴露到局域网。需要局域网访问时，明确修改 `docker-compose.yml` 的端口绑定，并同时收紧防火墙和密码策略。
+
+### 4.5 健康探针与优雅停机
+
+应用内部端口：
+
+```text
+业务端口 8080
+管理端口 8081（MANAGEMENT_PORT）
+```
+
+Docker Compose 将管理端口映射到宿主机：
+
+```text
+127.0.0.1:8082 -> backend:8081
+```
+
+探针：
+
+- `liveness`：应用自身存活，不包含 MySQL、Redis、RabbitMQ。
+- `readiness`：readinessState、MySQL、Redis。RabbitMQ 不作为 readiness 必需依赖。
+- Kubernetes 探针应访问管理端口 8081，不通过前端 Nginx。
+
+优雅停机：
+
+```text
+server.shutdown=graceful
+spring.lifecycle.timeout-per-shutdown-phase=30s
+docker-compose stop_grace_period = 45s
+terminationGracePeriodSeconds（后续 K8s）= 45s
+```
+
+容器 ENTRYPOINT 使用 `exec java`，Java 进程接收 Docker/Kubernetes 发送的 SIGTERM。Docker `stop` 和 Kubernetes 滚动更新会等待正在处理的请求完成，单个停机阶段最长等待 30 秒；Compose 和 K8s 的 45 秒宽限期为停机阶段预留了缓冲，避免提前 SIGKILL。
+
+Actuator 只暴露 `health,info,prometheus`；环境信息、Bean 列表等敏感端点不暴露。
 
 Nginx 配置位于 `frontend/nginx.conf`：
 
@@ -231,6 +269,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\load-demo-data.ps1 -Local
 | 8080 | Windows 本地后端 |
 | 5173 | Windows 本地 Vite |
 | 8081 | Docker 后端映射到宿主机 |
+| 8082 | Docker Actuator 管理端口映射到宿主机 |
 | 8088 | Docker 前端 Nginx 映射到宿主机 |
 | 3307 | Docker MySQL 映射到宿主机 |
 | 6379 | Redis |
@@ -274,3 +313,30 @@ Get-Process -Id <PID>
 - 无真实支付、真实物流、优惠券、部分退款、换货和 AI Agent。
 - 浏览器自动化使用独立 Headless Edge + CDP 执行，不依赖用户日常浏览器窗口。
 - 手工验收时如果浏览器缓存了旧前端，`Ctrl+F5` 强制刷新即可。
+
+## 10. Kubernetes 部署（Phase 3）
+
+Kubernetes 部署与验证的完整说明见 [`kubernetes.md`](kubernetes.md)。
+
+快速命令：
+
+```powershell
+# 前置：Docker Desktop 已启用 Kubernetes
+kubectl get nodes
+
+# 构建镜像、创建 Secret、Flyway Job、管理员引导、后端/前端双副本、演示数据
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-k8s.ps1
+```
+
+访问：
+
+- 商城前端：`http://localhost:30088`（支持 NodePort 的集群）；Docker Desktop 默认不映射 NodePort，请使用 `kubectl port-forward -n mallagent svc/frontend 30088:80`
+- 管理探针：`kubectl port-forward -n mallagent svc/backend-management 18081:8081`
+- 管理端口不通过 NodePort/LoadBalancer 暴露，不进入前端 Nginx。
+
+注意事项：
+
+- K8s 使用独立 PVC 和数据库，不触碰 Docker Compose 数据卷。
+- K8s 测试期间建议 `docker compose stop`（不加 `-v`）释放内存；Compose 仍可随时恢复。
+- `docker compose down -v`、`kubectl delete namespace mallagent` 会删除数据，测试中禁止使用。
+- K8s Secret 由 `scripts/create-k8s-secret.ps1` 创建，真实值只保存在被 gitignore 的 `.env.k8s` 中。

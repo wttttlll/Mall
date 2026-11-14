@@ -1,9 +1,13 @@
 server:
   port: ${SERVER_PORT:8080}
+  shutdown: graceful
 
 spring:
   application:
     name: mallagent
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
 
   datasource:
     url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:mallagent}?useUnicode=true&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
@@ -63,10 +67,36 @@ mybatis-plus:
 springdoc:
   api-docs:
     path: /v3/api-docs
+    # 生产/Kubernetes 环境默认关闭；通过环境变量显式控制，避免依赖宽松绑定。
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:true}
   swagger-ui:
     path: /swagger-ui.html
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:true}
     tags-sorter: alpha
     operations-sorter: alpha
+
+management:
+  server:
+    # 与业务端口分离，Kubernetes 探针和 Prometheus 只访问管理端口
+    port: ${MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState,ping
+        readiness:
+          # RabbitMQ 不是当前核心链路的必需依赖，不进入 readiness
+          include: readinessState,db,redis
+  metrics:
+    tags:
+      application: mallagent
 
 mallagent:
   jwt:
@@ -81,7 +111,8 @@ mallagent:
   admin:
     username: admin
     init-password: ${ADMIN_INIT_PASSWORD:Admin@123456}
-    init-enabled: true
+    # 本地/Compose 默认开启；Kubernetes 稳定运行阶段由环境变量关闭。
+    init-enabled: ${ADMIN_INIT_ENABLED:true}
   product:
     cache:
       category-tree-ttl: 1h

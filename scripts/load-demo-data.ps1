@@ -1,25 +1,38 @@
 ﻿param(
-    [switch]$Local
+    [switch]$Local,
+    [switch]$K8s
 )
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 $sqlFile = Join-Path $Root 'scripts\demo-data.sql'
 $envFile = Join-Path $Root '.env'
+$k8sEnvFile = Join-Path $Root '.env.k8s'
+
+if ($Local -and $K8s) {
+    throw "不能同时使用 -Local 和 -K8s。"
+}
 
 if (-not (Test-Path -LiteralPath $sqlFile)) {
     throw "未找到演示数据脚本：$sqlFile"
 }
 
-$values = @{}
-if (Test-Path -LiteralPath $envFile) {
-    foreach ($line in Get-Content -LiteralPath $envFile) {
+function Read-EnvFile([string]$Path) {
+    $result = @{}
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $result
+    }
+    foreach ($line in Get-Content -LiteralPath $Path) {
         if ($line -match '^\s*#' -or $line -match '^\s*$') { continue }
         if ($line -match '^\s*([^=]+)=(.*)$') {
-            $values[$matches[1].Trim()] = $matches[2].Trim().Trim('"').Trim("'")
+            $result[$matches[1].Trim()] = $matches[2].Trim().Trim('"').Trim("'")
         }
     }
+    return $result
 }
+
+$values = Read-EnvFile $envFile
+$k8sValues = Read-EnvFile $k8sEnvFile
 
 function Get-Value([string]$Name, [string]$Default) {
     if ($values.ContainsKey($Name) -and $values[$Name]) { return $values[$Name] }
@@ -30,7 +43,16 @@ $database = Get-Value 'MYSQL_DATABASE' 'mallagent'
 $user = Get-Value 'MYSQL_USER' 'mallagent'
 $password = Get-Value 'MYSQL_PASSWORD' 'mallagent'
 
-if (-not $Local) {
+if ($K8s) {
+    if (-not $k8sValues.ContainsKey('K8S_MYSQL_PASSWORD') -or -not $k8sValues['K8S_MYSQL_PASSWORD']) {
+        throw "未找到 .env.k8s 或 K8S_MYSQL_PASSWORD。请先运行 scripts/deploy-k8s.ps1。"
+    }
+    $password = $k8sValues['K8S_MYSQL_PASSWORD']
+    $kubectl = (Get-Command kubectl -ErrorAction Stop).Source
+    $fileName = $kubectl
+    $arguments = "exec -i -n mallagent mysql-0 -- env MYSQL_PWD=$password mysql --default-character-set=utf8mb4 -u$user $database"
+    $label = "Kubernetes MySQL ($database)"
+} elseif (-not $Local) {
     $container = (& docker ps --filter 'name=^mallagent-mysql$' --format '{{.Names}}') 2>$null
     if (-not $container) {
         throw "mallagent-mysql 容器未运行。请先启动 Docker，或使用 -Local 连接本机 MySQL。"
@@ -72,9 +94,16 @@ if ($process.ExitCode -ne 0) {
 }
 
 # 分类树有 Redis 缓存；演示分类直接写库后清理缓存，避免首页等待 TTL 过期。
-$redisContainer = (& docker ps --filter 'name=^mallagent-redis$' --format '{{.Names}}') 2>$null
-if ($redisContainer) {
-    & docker exec mallagent-redis redis-cli DEL 'mallagent:product:category:tree:v1' *> $null
+if ($K8s) {
+    $redisPassword = $k8sValues['K8S_REDIS_PASSWORD']
+    if ($redisPassword) {
+        & kubectl exec -n mallagent redis-0 -- env REDISCLI_AUTH=$redisPassword redis-cli DEL 'mallagent:product:category:tree:v1' *> $null
+    }
+} else {
+    $redisContainer = (& docker ps --filter 'name=^mallagent-redis$' --format '{{.Names}}') 2>$null
+    if ($redisContainer) {
+        & docker exec mallagent-redis redis-cli DEL 'mallagent:product:category:tree:v1' *> $null
+    }
 }
 
 Write-Host "演示数据初始化完成。重复执行不会重复创建商品或增加库存。" -ForegroundColor Green
